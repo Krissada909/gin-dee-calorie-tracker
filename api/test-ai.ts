@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { authenticateRequest, loadSavedAISettings, sendAIError, settingsFromRequest, settingsFromSavedSettings, testProviderConnection, AIRequestError } from '../server/ai'
+import { authenticateRequest, loadSavedAISettings, sendAIError, settingsFromRequest, settingsFromSavedSettings, testProviderConnection, AIRequestError } from '../server/ai.js'
 
 export const config = { maxDuration: 30 }
 

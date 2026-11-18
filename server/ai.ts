@@ -1,7 +1,7 @@
 import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns'
 import { request as httpsRequest } from 'node:https'
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 export type AIProvider = 'gemini' | 'openai-compatible'
@@ -19,7 +19,7 @@ type SettingsRow = {
   base_url: string | null
 }
 
-type AuthContext = { client: SupabaseClient; user: User }
+type AuthContext = { client: SupabaseClient; user: { id: string } }
 type ChatMessage = { role: 'system' | 'user'; content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> }
 type ChatResponse = { choices?: Array<{ message?: { content?: unknown } }>; error?: { message?: string } }
 
@@ -53,9 +53,18 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   })
-  const { data, error } = await client.auth.getUser(token)
-  if (error || !data.user) throw new AIRequestError(401, 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง')
-  return { client, user: data.user }
+  let authResponse: Response
+  try {
+    authResponse = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/auth/v1/user`, {
+      headers: { apikey: anonKey, Authorization: `Bearer ${token}` },
+    })
+  } catch {
+    throw new AIRequestError(503, 'ตรวจสอบเซสชันกับ Supabase ไม่สำเร็จ')
+  }
+  if (!authResponse.ok) throw new AIRequestError(401, 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง')
+  const userPayload = await authResponse.json().catch(() => null) as { id?: unknown } | null
+  if (!userPayload || typeof userPayload.id !== 'string') throw new AIRequestError(401, 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง')
+  return { client, user: { id: userPayload.id } }
 }
 
 function isPrivateHost(hostname: string) {
