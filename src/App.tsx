@@ -3,11 +3,12 @@ import {
   Activity as ActivityIcon, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight,
   Bell, Camera, Check, ChevronDown, CircleHelp, Clock3, Flame, Footprints,
   ImagePlus, LoaderCircle, LogOut, Mail, Minus, Plus, Salad, Sparkles, Trash2,
-  Utensils, X,
+  Settings as SettingsIcon, Utensils, X,
 } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, mealLabels, supabase, type Activity, type Meal, type MealType } from './lib/supabase'
 import { signedFoodPhotoUrl, uploadFoodPhoto } from './lib/foodPhotos'
+import AISettingsPage from './components/AISettings'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const mealTypes: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -145,7 +146,7 @@ function AuthGate({ onContinueDemo }: { onContinueDemo: () => void }) {
   )
 }
 
-function MealComposer({ date, onClose, onSave }: { date: string; onClose: () => void; onSave: (entry: Omit<Meal, 'id'>, photo?: File) => Promise<void> }) {
+function MealComposer({ date, accessToken, canAnalyze, onClose, onSave }: { date: string; accessToken?: string; canAnalyze: boolean; onClose: () => void; onSave: (entry: Omit<Meal, 'id'>, photo?: File) => Promise<void> }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [mealType, setMealType] = useState<MealType>('lunch')
   const [name, setName] = useState('')
@@ -165,17 +166,17 @@ function MealComposer({ date, onClose, onSave }: { date: string; onClose: () => 
       const image = await readImage(file)
       setPhoto(image.file)
       setPreview(image.url)
-      setAnalysisNote('ภาพพร้อมแล้ว กด “ให้ช่วยประเมิน” เพื่อดูชื่ออาหารและแคลอรีโดยประมาณ')
+      setAnalysisNote(canAnalyze ? 'ภาพพร้อมแล้ว กด “ให้ช่วยประเมิน” เพื่อดูชื่ออาหารและแคลอรีโดยประมาณ' : 'โหมดตัวอย่างยังไม่เชื่อม AI — กรอกชื่ออาหารและแคลอรีเองได้')
     } catch (e) { setError(e instanceof Error ? e.message : 'เปิดรูปไม่สำเร็จ') }
   }
 
   async function analyzePhoto() {
-    if (!preview) return
+    if (!preview || !accessToken) return
     setAnalyzing(true)
     setError('')
     try {
       const response = await fetch('/api/analyze-food', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ imageDataUrl: preview }),
       })
       const result = await response.json()
@@ -213,7 +214,7 @@ function MealComposer({ date, onClose, onSave }: { date: string; onClose: () => 
         {preview ? <div className="photo-preview"><img src={preview} alt="ภาพอาหารที่เลือก" /><button type="button" className="photo-remove" onClick={() => { setPhoto(undefined); setPreview(''); setAnalysisNote('') }} aria-label="ลบรูป"><X size={16} /></button></div> : <button type="button" className="photo-drop" onClick={() => inputRef.current?.click()}><span className="photo-drop-icon"><ImagePlus size={23} /></span><strong>เพิ่มรูปอาหาร</strong><small>ถ่ายรูปหรือเลือกจากอัลบั้ม</small><span className="photo-drop-cta"><Camera size={14} /> เลือกรูป</span></button>}
         <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void choosePhoto(e.target.files?.[0])} />
       </div>
-      {preview && <div className="analysis-row"><div className="analysis-copy"><Sparkles size={16} /><span>{analysisNote || 'ให้ AI ช่วยดูว่าเป็นอาหารอะไร'}</span></div><button type="button" className="button button-outline button-small" onClick={() => void analyzePhoto()} disabled={analyzing}>{analyzing ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{analyzing ? 'กำลังดูรูป...' : 'ให้ช่วยประเมิน'}</button></div>}
+      {preview && <div className="analysis-row"><div className="analysis-copy"><Sparkles size={16} /><span>{analysisNote || 'ให้ AI ช่วยดูว่าเป็นอาหารอะไร'}</span></div>{canAnalyze ? <button type="button" className="button button-outline button-small" onClick={() => void analyzePhoto()} disabled={analyzing}>{analyzing ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{analyzing ? 'กำลังดูรูป...' : 'ให้ช่วยประเมิน'}</button> : <span className="analysis-unavailable">ตั้งค่า AI หลังเข้าสู่ระบบ</span>}</div>}
       <div className="field-grid">
         <div className="field full-field"><label htmlFor="meal-name">ชื่ออาหาร</label><input id="meal-name" required maxLength={160} placeholder="เช่น ข้าวกะเพราไก่ไข่ดาว" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div className="field"><label htmlFor="meal-calories">แคลอรีโดยประมาณ</label><div className="input-suffix"><input id="meal-calories" required type="number" min="0" max="10000" step="1" placeholder="0" value={calories} onChange={(e) => setCalories(e.target.value)} /><span>kcal</span></div></div>
@@ -279,6 +280,7 @@ export default function App() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<'meal' | 'activity' | null>(null)
+  const [page, setPage] = useState<'dashboard' | 'settings'>('dashboard')
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number | undefined>(undefined)
   const today = dateKey()
@@ -294,6 +296,7 @@ export default function App() {
       setSession(current)
       setAuthReady(true)
       if (current) setDemoMode(false)
+      else setPage('dashboard')
     })
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [])
@@ -413,9 +416,10 @@ export default function App() {
       <a className="brand" href="#top"><IconMark /><span>กินดี</span><span className="brand-period">.</span></a>
       <span className="nav-caption">สมุดบันทึกของฉัน</span>
       <nav className="side-nav" aria-label="เมนูหลัก">
-        <a href="#summary" className="nav-item active"><span className="nav-icon"><Salad size={18} /></span>ภาพรวมวันนี้</a>
-        <a href="#meals" className="nav-item"><span className="nav-icon"><Utensils size={18} /></span>บันทึกอาหาร</a>
-        <a href="#activities" className="nav-item"><span className="nav-icon"><Footprints size={18} /></span>กิจกรรมของฉัน</a>
+        <button type="button" className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><span className="nav-icon"><Salad size={18} /></span>ภาพรวมวันนี้</button>
+        <a href="#meals" className="nav-item" onClick={() => setPage('dashboard')}><span className="nav-icon"><Utensils size={18} /></span>บันทึกอาหาร</a>
+        <a href="#activities" className="nav-item" onClick={() => setPage('dashboard')}><span className="nav-icon"><Footprints size={18} /></span>กิจกรรมของฉัน</a>
+        {session && !demoMode && <button type="button" className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><span className="nav-icon"><SettingsIcon size={18} /></span>ตั้งค่า AI</button>}
       </nav>
       <div className="sidebar-spacer" />
       <div className="privacy-note"><span className="privacy-mark"><Check size={13} /></span><div><strong>{demoMode ? 'ข้อมูลตัวอย่าง' : 'ข้อมูลส่วนตัว'}</strong><small>{demoMode ? 'เก็บไว้ในเบราว์เซอร์นี้' : 'บันทึกในบัญชีของคุณ'}</small></div></div>
@@ -424,13 +428,14 @@ export default function App() {
 
     <div className="main-column" id="top">
       <header className="topbar"><a className="mobile-brand" href="#top"><IconMark /><span>กินดี</span><span className="brand-period">.</span></a><div className="topbar-right"><span className={`mode-pill ${demoMode ? 'demo' : ''}`}><span />{demoMode ? 'โหมดตัวอย่าง' : 'บันทึกส่วนตัว'}</span><button className="icon-button notification-button" aria-label="แจ้งเตือน"><Bell size={18} /></button><div className="user-menu">{demoMode ? <span className="avatar">ก</span> : <span className="avatar">{session?.user.email?.[0]?.toUpperCase() || 'U'}</span>}<span className="user-name">{demoMode ? 'ผู้ใช้ตัวอย่าง' : session?.user.email?.split('@')[0]}</span><ChevronDown size={14} />{!demoMode && <button className="signout-button" title="ออกจากระบบ" onClick={() => void supabase?.auth.signOut()}><LogOut size={15} /></button>}</div></div></header>
-      <main className="dashboard">
+      {page === 'settings' && session && !demoMode && <AISettingsPage session={session} onBack={() => setPage('dashboard')} />}
+      <main className={`dashboard ${page === 'settings' ? 'dashboard-hidden' : ''}`}>
         <section className="welcome-row">
           <div><div className="eyebrow">บันทึกเล็ก ๆ ที่ทำให้เข้าใจตัวเอง</div><h1>{isToday ? 'วันนี้ของคุณ' : 'บันทึกประจำวัน'}</h1><p className="date-label">{formatDateLabel(selectedDate)}</p></div>
           <div className="date-switcher"><button className="date-arrow" aria-label="วันก่อนหน้า" onClick={() => shiftDate(-1)}><ArrowLeft size={17} /></button><button className="date-today" onClick={() => setSelectedDate(today)} disabled={isToday}><Clock3 size={14} /> วันนี้</button><button className="date-arrow" aria-label="วันถัดไป" disabled={selectedDate >= today} onClick={() => shiftDate(1)}><ArrowRight size={17} /></button></div>
         </section>
 
-        {demoMode && <div className="demo-banner"><Sparkles size={16} /><span>กำลังดูข้อมูลตัวอย่าง — เชื่อม Supabase ในการตั้งค่าเพื่อเก็บข้อมูลบัญชีของคุณ</span><button onClick={() => showToast('ดูคู่มือตั้งค่าใน README.md')}>ดูวิธีตั้งค่า</button></div>}
+        {demoMode && <div className="demo-banner"><Sparkles size={16} /><span>กำลังดูข้อมูลตัวอย่าง — เชื่อม Supabase ในการตั้งค่าเพื่อเก็บข้อมูลบัญชีของคุณ</span><button onClick={() => showToast('ดูคู่มือตั้งค่าใน README.md')}>ดูวิธีตั้งค่า</button>{isSupabaseConfigured && <button className="demo-login-button" onClick={() => setDemoMode(false)}>เข้าสู่ระบบ</button>}</div>}
 
         <section id="summary" className="summary-section">
           <div className="summary-card">
@@ -456,9 +461,9 @@ export default function App() {
 
         <footer className="dashboard-foot"><span><CircleHelp size={14} /> พลังงานที่เผาผลาญในหน้านี้รวมเฉพาะกิจกรรมที่คุณบันทึก ไม่ใช่พลังงานพื้นฐานของร่างกาย</span><span>ทำอย่างสม่ำเสมอ ในแบบของคุณ</span></footer>
       </main>
-      <nav className="mobile-nav"><a href="#summary" className="mobile-nav-item active"><Salad size={19} /><span>ภาพรวม</span></a><a href="#meals" className="mobile-nav-item"><Utensils size={19} /><span>อาหาร</span></a><a href="#activities" className="mobile-nav-item"><Footprints size={19} /><span>กิจกรรม</span></a></nav>
+      <nav className="mobile-nav"><a href="#summary" className={`mobile-nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><Salad size={19} /><span>ภาพรวม</span></a><a href="#meals" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Utensils size={19} /><span>อาหาร</span></a><a href="#activities" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Footprints size={19} /><span>กิจกรรม</span></a>{session && !demoMode && <button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><SettingsIcon size={19} /><span>ตั้งค่า</span></button>}</nav>
     </div>
-    {modal === 'meal' && <MealComposer key={`meal-${selectedDate}`} date={selectedDate} onClose={() => setModal(null)} onSave={saveMeal} />}
+    {modal === 'meal' && <MealComposer key={`meal-${selectedDate}`} date={selectedDate} accessToken={session?.access_token} canAnalyze={Boolean(session && !demoMode)} onClose={() => setModal(null)} onSave={saveMeal} />}
     {modal === 'activity' && <ActivityComposer key={`activity-${selectedDate}`} date={selectedDate} onClose={() => setModal(null)} onSave={saveActivity} />}
     {toast && <div className="toast-message"><Check size={16} />{toast}</div>}
   </div>

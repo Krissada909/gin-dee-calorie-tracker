@@ -1,62 +1,52 @@
 # กินดี — สมุดอาหารประจำวัน
 
-เว็บแอปภาษาไทยสำหรับบันทึกอาหารและกิจกรรมในแต่ละวัน มีหน้าแดชบอร์ดแสดงแคลอรีรับเข้า แคลอรีจากกิจกรรม ระยะทาง และสมดุลสุทธิ พร้อมอัปโหลดรูปอาหารให้ AI ช่วยระบุชื่อและประเมินแคลอรีก่อนผู้ใช้ยืนยัน
+เว็บแอปภาษาไทยสำหรับบันทึกอาหารและกิจกรรมในแต่ละวัน แสดงแคลอรีรับเข้า แคลอรีที่ผู้ใช้กรอกว่าใช้จากกิจกรรม ระยะทาง และสมดุลสุทธิ ผู้ใช้ล็อกอินด้วยอีเมลเพื่อแยกข้อมูล และตั้งค่า AI provider ของตนเองเพื่อช่วยระบุอาหารจากภาพได้
 
 ## เริ่มใช้งานในเครื่อง
 
-ต้องมี Node.js 20 ขึ้นไปและ pnpm 10.18.0 จากนั้นคัดลอก `.env.example` เป็น `.env.local` แล้วตั้งค่าที่ต้องใช้ (ถ้ายังไม่ตั้ง Supabase แอปจะเปิดโหมดตัวอย่างและเก็บข้อมูลใน browser เครื่องนั้นเท่านั้น)
+ต้องมี Node.js 20 ขึ้นไปและ pnpm 10.18.0 จากนั้นคัดลอก `.env.example` เป็น `.env.local` แล้วตั้งค่า Supabase หากยังไม่ตั้ง Supabase แอปจะเปิดโหมดตัวอย่างและเก็บข้อมูลใน browser เครื่องนั้นเท่านั้น
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Vite เปิดที่ `http://localhost:3000` โหมดนี้ใช้ทดสอบหน้าเว็บและบันทึกตัวอย่าง; Vercel Function สำหรับ AI ทำงานเมื่อใช้ Vercel deployment หรือ `vercel dev`
+Vite เปิดที่ `http://localhost:3000` โหมดนี้ใช้ทดสอบหน้าเว็บและข้อมูลตัวอย่าง; Vercel Functions สำหรับทดสอบ provider และวิเคราะห์รูปทำงานเมื่อใช้ `vercel dev` หรือ production deployment
 
-## ตั้งค่า Supabase
+## ตั้งค่า Supabase และล็อกอิน
 
-สร้าง Supabase project แล้วรัน `supabase/schema.sql` ใน SQL Editor ของโปรเจกต์ ไฟล์นี้สร้างตาราง `food_entries` และ `exercise_entries`, เปิด Row Level Security และสร้าง bucket `food-photos` แบบ private พร้อม policies ที่จำกัดข้อมูลและรูปไว้เฉพาะบัญชีเจ้าของ
+สำหรับ Supabase project ใหม่ ให้รัน `supabase/schema.sql` ใน SQL Editor ไฟล์นี้สร้างตาราง `food_entries`, `exercise_entries` และ `user_ai_settings`, เปิด Row Level Security และสร้าง bucket `food-photos` แบบ private พร้อม policies ที่จำกัดข้อมูลและรูปไว้เฉพาะบัญชีเจ้าของ สำหรับ project ที่มีตารางอาหาร/กิจกรรมอยู่แล้ว ให้รัน migration ใหม่จาก `supabase/migrations/20261118_100000_user_ai_settings.sql` เพื่อเพิ่มเฉพาะ AI settings
 
-เปิด Email OTP ใน Supabase Auth แล้วตั้งค่า URL และ publishable/anon key ใน environment:
+เปิด Email OTP ใน Supabase Auth แล้วตั้ง URL และ publishable/anon key ใน environment:
 
 ```env
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
 ```
 
-ค่าทั้งสองตัวใช้ใน browser ได้ตามรูปแบบ public key ของ Supabase; ห้ามใส่ `service_role` key ในแอปหรือ environment ที่ขึ้นต้น `VITE_` แอปจะส่งลิงก์ทางอีเมลสำหรับเข้าสู่ระบบ และใช้ RLS ปกป้องข้อมูลแยกตามบัญชี
+ค่าทั้งสองใช้ใน browser ได้ตามรูปแบบ public key ของ Supabase; ห้ามใส่ `service_role` key ในแอปหรือ environment ที่ขึ้นต้น `VITE_` แอปส่งลิงก์ทางอีเมลเพื่อเข้าสู่ระบบ และใช้ RLS แยกข้อมูลอาหาร กิจกรรม รูปภาพ และการตั้งค่า AI ระหว่างบัญชี
 
-## เลือกผู้ให้บริการ AI สำหรับวิเคราะห์รูป
+ใน Supabase Auth > URL Configuration ให้เพิ่ม production URL ของ Vercel ใน Site URL/Redirect URLs เพื่อให้ Email OTP กลับมาที่แอปได้ เช่น `https://gin-dee-calorie-tracker.vercel.app` และ URL Preview ที่ต้องการใช้งาน
 
-การวิเคราะห์ทำงานใน `api/analyze-food.ts` ฝั่ง server จึงไม่ส่ง API key ไปยัง browser ตั้งค่า provider และ key เฉพาะใน Environment Variables ฝั่ง Vercel (หรือ `.env.local` สำหรับ `vercel dev`):
+## ตั้งค่า AI ในหน้าแอป
 
-```env
-AI_PROVIDER=gemini
-AI_API_KEY=<Gemini API key>
-AI_MODEL=gemini-3.8-flash
-```
+หลังล็อกอิน เปิดเมนู **ตั้งค่า AI** เลือก Gemini หรือ OpenAI-compatible แล้วกรอก API key และชื่อ model; สำหรับ OpenAI-compatible provider ให้กรอก HTTPS Base URL เพิ่มด้วย ปุ่ม **ทดสอบการเชื่อมต่อ** จะเรียกผู้ให้บริการจริงและแสดงผลสำเร็จหรือข้อความที่ช่วยตรวจ key, model หรือ endpoint ได้ คีย์อาจถูกส่งไปยัง provider ระหว่างการทดสอบและวิเคราะห์รูป จึงควรใช้ key ที่ผู้ใช้เป็นเจ้าของ และการเรียกใช้อาจมีค่าใช้จ่ายตามผู้ให้บริการ
 
-Gemini ใช้ Gemini API ผ่าน OpenAI compatibility endpoint ของ Google และรับภาพในคำขอ Chat Completions ได้ [เอกสาร Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai) หากต้องการใช้ provider อื่นที่รองรับ OpenAI-compatible Chat Completions ให้เปลี่ยนค่าดังนี้:
+Gemini ใช้ endpoint OpenAI-compatible ของ Google อัตโนมัติ โดยค่าเริ่มต้นเป็น model `gemini-3.8-flash` ซึ่งมี input แบบภาพให้ใช้กับ Chat Completions ได้ ดู [รายการโมเดล Gemini ทางการ](https://aistudio.google.com/docs/models), [เอกสาร OpenAI compatibility](https://aistudio.google.com/docs/openai) และ [สร้าง Gemini API key](https://aistudio.google.com/apikey)
 
-```env
-AI_PROVIDER=openai-compatible
-AI_API_KEY=<provider API key>
-AI_BASE_URL=https://<provider-endpoint>/v1
-AI_MODEL=<vision model name>
-```
+OpenAI-compatible ใช้ endpoint ที่ผู้ใช้ระบุและ model ที่ provider นั้นรองรับทั้ง Chat Completions และ image input; Base URL ต้องเป็น HTTPS สาธารณะ และไม่ต้องต่อ `/chat/completions` เอง การตั้งค่าถูกแยกเป็นหนึ่งแถวต่อผู้ใช้ด้วย Supabase RLS; key ที่บันทึกแล้วจะไม่ถูกดึงกลับมาแสดงในหน้า Settings, ไม่เก็บใน localStorage หรือ bundle ของเว็บ และ API ฝั่ง server ตรวจ session ก่อนใช้เฉพาะค่าของผู้ใช้ที่ล็อกอิน ระบบไม่ใช้ Supabase `service_role` key
 
-`AI_BASE_URL` จะใช้ค่า OpenAI API เป็นค่าเริ่มต้นเมื่อไม่ระบุ หากใช้ endpoint อื่นให้ตั้งเป็น base URL ที่ provider แจ้งมาและเลือกโมเดลที่รองรับภาพ คีย์ต้องไม่ขึ้นต้น `VITE_` และห้ามใส่ใน source code
+ขอบเขตความปลอดภัย: RLS ป้องกันไม่ให้ผู้ใช้อื่นอ่านหรือแก้ไขแถวของคุณ แต่ key ยังเป็นค่าที่จัดเก็บในฐานข้อมูลของโปรเจกต์; เจ้าของ/ผู้ดูแล Supabase ที่มีสิทธิ์ฐานข้อมูลอาจเข้าถึงได้ อย่าใส่ credential ที่ไม่ต้องการให้ผู้ดูแลโปรเจกต์เห็น และลบ key ได้จากหน้า Settings
 
-หากไม่มี AI key ให้ปล่อย `AI_API_KEY` ว่าง แอปยังรับภาพและให้กรอกชื่อ/แคลอรีด้วยตัวเองได้ เมื่อเปิด AI แล้วผลลัพธ์ยังเป็นเพียงการประเมินจากภาพ อาจไม่เห็นส่วนผสม น้ำมัน ขนาดเสิร์ฟ หรือวิธีปรุง ผู้ใช้จึงควรตรวจและแก้ไขก่อนบันทึก
+ถ้ายังไม่มี API key ผู้ใช้ยังบันทึกชื่ออาหารและแคลอรีด้วยตนเองได้ ผล AI จากภาพเป็นค่าประเมิน อาจไม่เห็นส่วนผสม น้ำมัน ขนาดเสิร์ฟ หรือวิธีปรุง จึงควรตรวจและแก้ก่อนบันทึก
 
 ## Deploy ไป Vercel
 
-1. Push โปรเจกต์ไป GitHub แล้วเลือก **Add New Project** ใน Vercel เพื่อ import repository
-2. ใช้ Framework Preset `Vite`, Build Command `pnpm build`, Output Directory `dist`; `vercel.json` ตั้งค่า SPA rewrite ให้แล้ว
-3. ตั้ง `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` ใน Project Settings > Environment Variables หากต้องการใช้ AI ให้เพิ่ม `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` และ `AI_BASE_URL` ตาม provider ที่เลือก
-4. Deploy แล้วเพิ่ม URL ของเว็บใน Supabase Auth > URL Configuration > Site URL และ Redirect URLs เพื่อให้ลิงก์ Email OTP กลับมาที่แอปได้
+โปรเจกต์เชื่อม GitHub repository สำหรับ Vercel แล้ว ให้ push commit ไป branch `main` เพื่อให้ Vercel เริ่ม deploy จาก Git integration ใช้ Framework Preset `Vite`, Build Command `corepack pnpm install --frozen-lockfile && corepack pnpm build`, Output Directory `dist`; `vercel.json` ตั้งค่า SPA fallback ให้แล้ว
 
-ไฟล์ Function ใน `api/` ให้ Vercel route ใต้ `/api/...` อัตโนมัติ ส่วน SPA rewrite ใช้ส่งหน้าเว็บไปที่ `index.html`; ดู [Vercel Rewrites](https://vercel.com/docs/routing/rewrites) และ [Vercel Functions](https://vercel.com/docs/functions) เพิ่มเติม
+ตั้ง `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` ใน Project Settings > Environment Variables ของ Vercel แล้ว redeploy; ไม่ต้องตั้ง global AI API key ใน Vercel เพราะผู้ใช้ตั้ง key แยกในหน้า Settings ของบัญชีตนเอง
+
+ไฟล์ใน `api/` ให้ Vercel route ใต้ `/api/...` อัตโนมัติ ส่วน SPA rewrite ส่งหน้าหลักไป `index.html`; ดู [Vercel Rewrites](https://vercel.com/docs/routing/rewrites) และ [Vercel Functions](https://vercel.com/docs/functions) เพิ่มเติม
 
 อย่า commit `.env.local` หรือ API keys; มี `.gitignore` สำหรับไฟล์ environment อยู่แล้ว
 
@@ -66,8 +56,9 @@ AI_MODEL=<vision model name>
 
 ## โครงสร้างสำคัญ
 
-- `src/App.tsx`, `src/styles.css`: หน้าจอ dashboard และ interaction
+- `src/App.tsx`, `src/components/AISettings.tsx`, `src/styles.css`: dashboard, authentication และหน้า Settings
 - `src/lib/supabase.ts`, `src/lib/foodPhotos.ts`: client และ private photo storage
-- `api/analyze-food.ts`: Vercel Function ที่เลือก Gemini หรือ OpenAI-compatible provider ได้
-- `supabase/schema.sql`: schema, RLS และ storage policies
+- `server/ai.ts`: ตรวจ session, RLS lookup, validation และเรียก AI provider
+- `api/analyze-food.ts`, `api/test-ai.ts`: Vercel Functions สำหรับวิเคราะห์ภาพและทดสอบการเชื่อมต่อ
+- `supabase/schema.sql`, `supabase/migrations/`: schema, RLS และ storage policies
 - `plan.md`, `TODO.md`: แผนและผลลัพธ์งานที่ยืนยัน
