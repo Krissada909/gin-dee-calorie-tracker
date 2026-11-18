@@ -1,6 +1,6 @@
 # กินดี — สมุดอาหารประจำวัน
 
-เว็บแอปภาษาไทยสำหรับบันทึกอาหารและกิจกรรมในแต่ละวัน แสดงแคลอรีรับเข้า แคลอรีที่ผู้ใช้กรอกว่าใช้จากกิจกรรม ระยะทาง และสมดุลสุทธิ ผู้ใช้ล็อกอินด้วยอีเมลเพื่อแยกข้อมูล และตั้งค่า AI provider ของตนเองเพื่อช่วยระบุอาหารจากภาพได้
+เว็บแอปภาษาไทยสำหรับบันทึกอาหารและกิจกรรมในแต่ละวัน แสดงแคลอรีรับเข้า แคลอรีที่ผู้ใช้กรอกว่าใช้จากกิจกรรม ระยะทาง และสมดุลสุทธิ ผู้ใช้เข้าสู่ระบบด้วย Google (Gmail) ผ่าน Supabase OAuth และตั้งค่า AI provider ของตนเองเพื่อช่วยประเมินอาหารจากภาพได้
 
 ## เริ่มใช้งานในเครื่อง
 
@@ -13,20 +13,35 @@ pnpm dev
 
 Vite เปิดที่ `http://localhost:3000` โหมดนี้ใช้ทดสอบหน้าเว็บและข้อมูลตัวอย่าง; Vercel Functions สำหรับทดสอบ provider และวิเคราะห์รูปทำงานเมื่อใช้ `vercel dev` หรือ production deployment
 
-## ตั้งค่า Supabase และล็อกอิน
+## ตั้งค่า Supabase
 
-สำหรับ Supabase project ใหม่ ให้รัน `supabase/schema.sql` ใน SQL Editor ไฟล์นี้สร้างตาราง `food_entries`, `exercise_entries` และ `user_ai_settings`, เปิด Row Level Security และสร้าง bucket `food-photos` แบบ private พร้อม policies ที่จำกัดข้อมูลและรูปไว้เฉพาะบัญชีเจ้าของ สำหรับ project ที่มีตารางอาหาร/กิจกรรมอยู่แล้ว ให้รัน migration ใหม่จาก `supabase/migrations/20261118_100000_user_ai_settings.sql` เพื่อเพิ่มเฉพาะ AI settings
+สำหรับ Supabase project ใหม่ ให้รัน `supabase/schema.sql` ใน SQL Editor ไฟล์นี้สร้างตาราง `food_entries`, `exercise_entries` และ `user_ai_settings`, เปิด Row Level Security และสร้าง bucket `food-photos` แบบ private พร้อม policies ที่จำกัดข้อมูลและรูปไว้เฉพาะบัญชีเจ้าของ สำหรับ project ที่มีตารางอาหาร/กิจกรรมอยู่แล้ว ให้รัน migration `supabase/migrations/20261118_100000_user_ai_settings.sql` เพื่อเพิ่มเฉพาะ AI settings
 
-เปิด Email OTP ใน Supabase Auth แล้วตั้ง URL และ publishable/anon key ใน environment:
+ตั้ง URL และ publishable/anon key ใน environment ของ Vercel และ `.env.local`:
 
 ```env
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
 ```
 
-ค่าทั้งสองใช้ใน browser ได้ตามรูปแบบ public key ของ Supabase; ห้ามใส่ `service_role` key ในแอปหรือ environment ที่ขึ้นต้น `VITE_` แอปส่งลิงก์ทางอีเมลเพื่อเข้าสู่ระบบ และใช้ RLS แยกข้อมูลอาหาร กิจกรรม รูปภาพ และการตั้งค่า AI ระหว่างบัญชี
+ค่าทั้งสองใช้ใน browser ได้ตามรูปแบบ public key ของ Supabase; ห้ามใส่ `service_role` key ในแอปหรือ environment ที่ขึ้นต้น `VITE_` ตารางข้อมูลอาหาร กิจกรรม รูปภาพ และ AI settings ใช้ RLS แยกตามบัญชี
 
-ใน Supabase Auth > URL Configuration ให้เพิ่ม production URL ของ Vercel ใน Site URL/Redirect URLs เพื่อให้ Email OTP กลับมาที่แอปได้ เช่น `https://gin-dee-calorie-tracker.vercel.app` และ URL Preview ที่ต้องการใช้งาน
+## เปิด Google Sign-In (ทำครั้งเดียว)
+
+การเข้าสู่ระบบในหน้าแอปใช้ Google OAuth ไม่ส่ง Magic Link หรือ Email OTP จึงไม่ใช้โควตาส่งอีเมลของ Supabase Auth ขั้นตอนนี้ต้องเปิด Google provider ใน Supabase ก่อน ปุ่มจะยังล็อกอินไม่ได้จนกว่าจะตั้งค่าครบ
+
+1. ใน [Google Auth Platform](https://console.cloud.google.com/auth/overview) เลือกหรือสร้าง Google Cloud project แล้วสร้าง OAuth Client ID ชนิด **Web application**.
+2. เพิ่ม **Authorized JavaScript origins**:
+   - Production: `https://gin-dee-calorie-tracker.vercel.app`
+   - Local development (ถ้าต้องใช้): `http://localhost:3000`
+3. เพิ่ม **Authorized redirect URI** เป็น Supabase callback ของโปรเจกต์นี้: `https://tloenjfdzsjhrraaqlcy.supabase.co/auth/v1/callback`.
+4. ใน Supabase Dashboard ไปที่ **Authentication → Sign In / Providers → Google**, เปิด Google provider แล้วใส่ OAuth Client ID และ Client Secret.
+5. ใน Supabase Dashboard ไปที่ **Authentication → URL Configuration** ตั้ง Site URL เป็น `https://gin-dee-calorie-tracker.vercel.app` และเพิ่ม URL นี้ใน Redirect URLs; เพิ่ม `http://localhost:3000` เฉพาะเมื่อทดสอบ local.
+6. หาก OAuth consent screen ยังอยู่ในสถานะ Testing ให้เพิ่ม Gmail ที่จะใช้ใน **Test users** ของ Google Auth Platform.
+
+เก็บ Google Client Secret ไว้ในหน้า Google provider ของ Supabase เท่านั้น **อย่า commit ลง Git และอย่าใส่ใน Vercel**; Git ใช้ deploy โค้ดแอป ส่วน Google OAuth provider เป็นค่าลับฝั่ง Supabase. แอปใช้ข้อมูลพื้นฐาน `openid`, อีเมล และโปรไฟล์เท่านั้น ไม่อ่านหรือส่งอีเมลในกล่อง Gmail. Supabase รองรับการเชื่อม identity อัตโนมัติเมื่ออีเมลที่ยืนยันแล้วตรงกัน ดังนั้นให้เลือก Gmail เดียวกับบัญชีเดิมเพื่อเข้าถึงข้อมูลชุดเดิม ([รายละเอียด identity linking](https://supabase.com/docs/guides/auth/auth-identity-linking)).
+
+อ้างอิง: [Supabase Sign in with Google](https://supabase.com/docs/guides/auth/social-sign-in/auth-google) และ [Supabase Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)
 
 ## ตั้งค่า AI ในหน้าแอป
 
@@ -47,18 +62,3 @@ OpenAI-compatible ใช้ endpoint ที่ผู้ใช้ระบุแ�
 ตั้ง `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` ใน Project Settings > Environment Variables ของ Vercel แล้ว redeploy; ไม่ต้องตั้ง global AI API key ใน Vercel เพราะผู้ใช้ตั้ง key แยกในหน้า Settings ของบัญชีตนเอง
 
 ไฟล์ใน `api/` ให้ Vercel route ใต้ `/api/...` อัตโนมัติ ส่วน SPA rewrite ส่งหน้าหลักไป `index.html`; ดู [Vercel Rewrites](https://vercel.com/docs/routing/rewrites) และ [Vercel Functions](https://vercel.com/docs/functions) เพิ่มเติม
-
-อย่า commit `.env.local` หรือ API keys; มี `.gitignore` สำหรับไฟล์ environment อยู่แล้ว
-
-## วิธีคำนวณ
-
-แคลอรีรับเข้าคือผลรวมแคลอรีจากอาหารที่บันทึกในวันที่เลือก ส่วนแคลอรีที่ใช้ไปคือผลรวมการเผาผลาญจากกิจกรรมที่ผู้ใช้กรอก สมดุลสุทธิที่แสดงคือแคลอรีอาหารลบแคลอรีกิจกรรม และระยะทางคือผลรวมกิโลเมตรที่กรอกไว้ ตัวเลข “เผาผลาญ” ในแอปไม่ได้รวมพลังงานพื้นฐานของร่างกาย (BMR/TDEE) เพราะแอปยังไม่มีข้อมูลร่างกายและไม่ได้คำนวณค่าดังกล่าว
-
-## โครงสร้างสำคัญ
-
-- `src/App.tsx`, `src/components/AISettings.tsx`, `src/styles.css`: dashboard, authentication และหน้า Settings
-- `src/lib/supabase.ts`, `src/lib/foodPhotos.ts`: client และ private photo storage
-- `server/ai.ts`: ตรวจ session, RLS lookup, validation และเรียก AI provider
-- `api/analyze-food.ts`, `api/test-ai.ts`: Vercel Functions สำหรับวิเคราะห์ภาพและทดสอบการเชื่อมต่อ
-- `supabase/schema.sql`, `supabase/migrations/`: schema, RLS และ storage policies
-- `plan.md`, `TODO.md`: แผนและผลลัพธ์งานที่ยืนยัน

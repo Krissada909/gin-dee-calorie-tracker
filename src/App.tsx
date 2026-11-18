@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   Activity as ActivityIcon, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight,
   Bell, Camera, Check, ChevronDown, CircleHelp, Clock3, Flame, Footprints,
-  ImagePlus, LoaderCircle, LogOut, Mail, Minus, Plus, Salad, Sparkles, Trash2,
+  ImagePlus, LoaderCircle, LogOut, Minus, Plus, Salad, Sparkles, Trash2,
   Settings as SettingsIcon, Utensils, X,
 } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
@@ -101,23 +101,24 @@ function IconMark() {
 }
 
 function AuthGate({ onContinueDemo }: { onContinueDemo: () => void }) {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!supabase) return
+  async function signInWithGoogle() {
+    if (!supabase) {
+      setError('ยังไม่ได้ตั้งค่า Supabase สำหรับเข้าสู่ระบบ')
+      return
+    }
     setBusy(true)
     setError('')
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
     })
-    setBusy(false)
-    if (authError) setError(authError.message)
-    else setSent(true)
+    if (authError) {
+      setError(authError.message)
+      setBusy(false)
+    }
   }
 
   return (
@@ -126,18 +127,13 @@ function AuthGate({ onContinueDemo }: { onContinueDemo: () => void }) {
         <div className="auth-brand"><IconMark /><span>กินดี</span></div>
         <p className="eyebrow">YOUR DAILY FOOD JOURNAL</p>
         <h1>เริ่มบันทึก<br />ทีละมื้อ</h1>
-        <p className="auth-copy">เข้าสู่ระบบเพื่อเก็บบันทึกอาหารและกิจกรรมของคุณอย่างเป็นส่วนตัว</p>
-        {sent ? (
-          <div className="sent-message"><span className="sent-icon"><Mail size={20} /></span><strong>ส่งลิงก์ให้แล้ว</strong><p>ลองเช็กอีเมล {email} แล้วกดลิงก์เพื่อเข้าสู่ระบบ</p></div>
-        ) : (
-          <form onSubmit={submit} className="auth-form">
-            <label htmlFor="login-email">อีเมลของคุณ</label>
-            <input id="login-email" type="email" placeholder="name@email.com" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-            {error && <p className="form-error">{error}</p>}
-            <button className="button button-primary full-width" disabled={busy}>{busy ? <LoaderCircle className="spin" size={17} /> : <Mail size={17} />} ส่งลิงก์เข้าสู่ระบบ</button>
-          </form>
-        )}
-        <div className="auth-divider"><span>หรือ</span></div>
+        <p className="auth-copy">เข้าสู่ระบบด้วยบัญชี Google (Gmail) เพื่อเก็บข้อมูลของคุณแยกเป็นส่วนตัว</p>
+        <button className="button button-primary full-width google-login-button" type="button" onClick={signInWithGoogle} disabled={busy}>
+          {busy ? <LoaderCircle className="spin" size={17} /> : <span className="google-mark" aria-hidden="true">G</span>}
+          {busy ? 'กำลังเชื่อมต่อ Google…' : 'เข้าสู่ระบบด้วย Google'}
+        </button>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <p className="auth-provider-note">ใช้เพียงอีเมลและข้อมูลโปรไฟล์สำหรับบัญชี — ไม่เข้าถึงกล่องข้อความ Gmail; ต้องเปิด Google provider ใน Supabase ก่อนใช้งาน</p>
         <button className="button button-ghost full-width" onClick={onContinueDemo}>ลองโหมดตัวอย่าง</button>
         <p className="auth-footnote">ข้อมูลของคุณเป็นส่วนตัว และจะไม่ถูกเผยแพร่</p>
       </section>
