@@ -4,14 +4,14 @@
 
 ## เริ่มใช้งานในเครื่อง
 
-ต้องมี Node.js 20 ขึ้นไปและ pnpm 10.18.0 จากนั้นคัดลอก `.env.example` เป็น `.env.local` แล้วตั้งค่า Supabase หากยังไม่ตั้ง Supabase แอปจะเปิดโหมดตัวอย่างและเก็บข้อมูลใน browser เครื่องนั้นเท่านั้น
+ต้องมี Node.js 20 ขึ้นไปและ pnpm 10.18.0 จากนั้นคัดลอก `.env.example` เป็น `.env.local` แล้วตั้งค่า Supabase ต้องตั้ง `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` ก่อน แอปไม่มีโหมดทดลองแบบไม่เข้าสู่ระบบ ผู้ใช้ต้องเข้าสู่ระบบด้วย Google
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Vite เปิดที่ `http://localhost:3000` โหมดนี้ใช้ทดสอบหน้าเว็บและข้อมูลตัวอย่าง; Vercel Functions สำหรับทดสอบ provider และวิเคราะห์รูปทำงานเมื่อใช้ `vercel dev` หรือ production deployment
+Vite เปิดที่ `http://localhost:3000` โหมดนี้ใช้ทดสอบหน้าเว็บ; Vercel Functions สำหรับทดสอบ provider และวิเคราะห์รูปทำงานเมื่อใช้ `vercel dev` หรือ production deployment
 
 ## ตั้งค่า Supabase
 

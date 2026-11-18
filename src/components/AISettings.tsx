@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { ArrowLeft, Check, CircleHelp, KeyRound, LoaderCircle, Save, ShieldCheck, Trash2, Wifi } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { ArrowLeft, Check, CircleHelp, KeyRound, LoaderCircle, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
@@ -7,12 +7,26 @@ type Provider = 'gemini' | 'openai-compatible'
 type TestStatus = { kind: 'idle' | 'success' | 'error'; message: string }
 type SettingsRow = { provider: Provider; base_url: string | null; model: string; updated_at: string }
 
+const CUSTOM_MODEL = '__custom__'
+
+function pickDefaultModel(models: string[], provider: Provider) {
+  if (provider === 'gemini') {
+    return models.find((id) => /flash/i.test(id) && !/lite|preview|exp/i.test(id)) || models.find((id) => /flash/i.test(id)) || models[0] || ''
+  }
+  return models.find((id) => /mini/i.test(id)) || models[0] || ''
+}
+
 export default function AISettingsPage({ session, onBack }: { session: Session; onBack: () => void }) {
   const [provider, setProvider] = useState<Provider>('gemini')
   const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState('gemini-3.8-flash')
+  const [model, setModel] = useState('')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
   const [hasSavedKey, setHasSavedKey] = useState(false)
+  const [savedProvider, setSavedProvider] = useState<Provider | null>(null)
+  const [models, setModels] = useState<string[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsError, setModelsError] = useState('')
+  const [customModel, setCustomModel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -39,8 +53,10 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
           setFormMessage(error.message.includes('user_ai_settings') ? 'ยังไม่ได้เตรียมตาราง AI settings ใน Supabase' : 'อ่านการตั้งค่าไม่สำเร็จ ลองโหลดหน้านี้ใหม่')
         } else if (data) {
           const row = data as SettingsRow
-          setProvider(row.provider === 'openai-compatible' ? 'openai-compatible' : 'gemini')
-          setModel(row.model || 'gemini-3.8-flash')
+          const rowProvider: Provider = row.provider === 'openai-compatible' ? 'openai-compatible' : 'gemini'
+          setProvider(rowProvider)
+          setSavedProvider(rowProvider)
+          setModel(row.model || '')
           setBaseUrl(row.base_url || 'https://api.openai.com/v1')
           setHasSavedKey(true)
         }
@@ -48,6 +64,44 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
       })
     return () => { active = false }
   }, [session.user.id])
+
+  const canLoadModels = Boolean(apiKey.trim()) || (hasSavedKey && savedProvider === provider)
+
+  const loadModels = useCallback(async () => {
+    const key = apiKey.trim()
+    if (!key && !(hasSavedKey && savedProvider === provider)) {
+      setModels([])
+      setModelsError('')
+      return
+    }
+    setModelsLoading(true)
+    setModelsError('')
+    try {
+      const response = await fetch('/api/list-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          provider,
+          ...(provider === 'openai-compatible' ? { baseUrl: baseUrl.trim() } : {}),
+          ...(key ? { apiKey: key } : {}),
+        }),
+      })
+      const result = await response.json().catch(() => ({})) as { models?: unknown; error?: string }
+      if (!response.ok || !Array.isArray(result.models)) throw new Error(result.error || 'โหลดรายการโมเดลไม่สำเร็จ')
+      const list = result.models.filter((item): item is string => typeof item === 'string')
+      setModels(list)
+      if (!hasSavedKey) setModel((current) => (list.includes(current) ? current : pickDefaultModel(list, provider)))
+    } catch (error) {
+      setModels([])
+      setModelsError(error instanceof Error ? error.message : 'โหลดรายการโมเดลไม่สำเร็จ')
+    } finally { setModelsLoading(false) }
+  }, [apiKey, baseUrl, hasSavedKey, provider, savedProvider, session.access_token])
+
+  useEffect(() => {
+    if (loading) return
+    const timer = window.setTimeout(() => void loadModels(), 800)
+    return () => window.clearTimeout(timer)
+  }, [loading, loadModels])
 
   async function testConnection() {
     if (!apiKey.trim() && !hasSavedKey) {
@@ -100,6 +154,7 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
     }
     setApiKey('')
     setHasSavedKey(true)
+    setSavedProvider(provider)
     setFormMessage(replacingKey ? 'บันทึกการตั้งค่าแล้ว API key จะไม่แสดงกลับมา' : 'อัปเดตการตั้งค่าแล้วโดยใช้ API key ที่บันทึกไว้')
   }
 
@@ -114,7 +169,10 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
       return
     }
     setProvider('gemini')
-    setModel('gemini-3.8-flash')
+    setModel('')
+    setModels([])
+    setCustomModel(false)
+    setSavedProvider(null)
     setBaseUrl('https://api.openai.com/v1')
     setApiKey('')
     setHasSavedKey(false)
@@ -137,21 +195,36 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
       <form className="settings-card" onSubmit={(event) => void saveSettings(event)}>
         <div className="settings-card-heading"><span className="settings-card-icon"><Wifi size={17} /></span><div><h2>ผู้ให้บริการ AI</h2><p>เลือกโมเดลที่ใช้ช่วยดูรูปอาหาร</p></div></div>
         <div className="provider-options" role="group" aria-label="เลือกผู้ให้บริการ AI">
-          <button type="button" className={`provider-option ${provider === 'gemini' ? 'selected' : ''}`} onClick={() => { setProvider('gemini'); setModel(model.startsWith('gemini-') ? model : 'gemini-3.8-flash'); setStatus({ kind: 'idle', message: '' }) }}><strong>Gemini</strong><small>Google AI Studio</small></button>
-          <button type="button" className={`provider-option ${provider === 'openai-compatible' ? 'selected' : ''}`} onClick={() => { setProvider('openai-compatible'); setModel(model.startsWith('gemini-') ? '' : model); setStatus({ kind: 'idle', message: '' }) }}><strong>OpenAI-compatible</strong><small>OpenAI หรือ endpoint อื่น</small></button>
+          <button type="button" className={`provider-option ${provider === 'gemini' ? 'selected' : ''}`} onClick={() => { setProvider('gemini'); setModel(model.startsWith('gemini') ? model : ''); setModels([]); setCustomModel(false); setStatus({ kind: 'idle', message: '' }) }}><strong>Gemini</strong><small>Google AI Studio</small></button>
+          <button type="button" className={`provider-option ${provider === 'openai-compatible' ? 'selected' : ''}`} onClick={() => { setProvider('openai-compatible'); setModel(model.startsWith('gemini') ? '' : model); setModels([]); setCustomModel(false); setStatus({ kind: 'idle', message: '' }) }}><strong>OpenAI-compatible</strong><small>OpenAI หรือ endpoint อื่น</small></button>
         </div>
 
         <div className="settings-fields">
           <div className="field">
-            <label htmlFor="ai-model">ชื่อ model</label>
-            <input id="ai-model" autoComplete="off" required maxLength={200} placeholder={provider === 'gemini' ? 'gemini-3.8-flash' : 'เช่น gpt-4o-mini'} value={model} onChange={(event) => { setModel(event.target.value); setStatus({ kind: 'idle', message: '' }) }} />
+            <div className="field-label-row">
+              <label htmlFor="ai-model">โมเดล AI</label>
+              <button type="button" className="link-button" onClick={() => void loadModels()} disabled={modelsLoading || !canLoadModels}>{modelsLoading ? <LoaderCircle className="spin" size={12} /> : <RefreshCw size={12} />}โหลดรายการใหม่</button>
+            </div>
+            {models.length > 0 && !customModel ? <select id="ai-model" value={model} required onChange={(event) => { if (event.target.value === CUSTOM_MODEL) { setCustomModel(true) } else { setModel(event.target.value) } setStatus({ kind: 'idle', message: '' }) }}>
+              {!model && <option value="" disabled>เลือกโมเดล…</option>}
+              {model && !models.includes(model) && <option value={model}>{model} (ไม่อยู่ในรายการ)</option>}
+              {models.map((id) => <option key={id} value={id}>{id}</option>)}
+              <option value={CUSTOM_MODEL}>กรอกชื่อโมเดลเอง…</option>
+            </select> : <input id="ai-model" autoComplete="off" required maxLength={200} placeholder={provider === 'gemini' ? 'ใส่ API key เพื่อโหลดรายการโมเดล หรือพิมพ์ชื่อเอง' : 'เช่น gpt-4o-mini'} value={model} onChange={(event) => { setModel(event.target.value); setStatus({ kind: 'idle', message: '' }) }} />}
+            <small className={`field-help ${modelsError ? 'field-help-error' : ''}`}>
+              {modelsLoading ? 'กำลังโหลดรายการโมเดล…'
+                : modelsError ? `${modelsError} · พิมพ์ชื่อโมเดลเองได้`
+                : models.length > 0 ? <>พบ {models.length} โมเดล · เลือกโมเดลที่รองรับการอ่านรูปภาพ{customModel && <> · <button type="button" className="inline-link" onClick={() => setCustomModel(false)}>เลือกจากรายการ</button></>}</>
+                : 'ใส่ API key แล้วระบบจะโหลดรายการโมเดลที่ใช้ได้ให้เลือกอัตโนมัติ'}
+            </small>
+            {models.length > 0 && model && !models.includes(model) && !customModel && <small className="field-help field-help-error">โมเดลนี้ไม่อยู่ในรายการของผู้ให้บริการ อาจใช้งานไม่ได้ ลองเลือกจากรายการ</small>}
           </div>
           {provider === 'openai-compatible' && <div className="field">
             <label htmlFor="ai-base-url">Base URL</label>
             <input id="ai-base-url" type="url" autoComplete="url" required maxLength={500} placeholder="https://api.openai.com/v1" value={baseUrl} onChange={(event) => { setBaseUrl(event.target.value); setStatus({ kind: 'idle', message: '' }) }} />
             <small className="field-help">ใส่ base URL ของ provider ไม่ต้องเติม `/chat/completions`; ต้องเป็น HTTPS</small>
           </div>}
-          {provider === 'gemini' && <div className="provider-hint"><CircleHelp size={15} /><span>ใช้ Gemini API ผ่าน endpoint ของ Google โดยอัตโนมัติ ค่าเริ่มต้นคือ <code>gemini-3.8-flash</code></span></div>}
+          {provider === 'gemini' && <div className="provider-hint"><CircleHelp size={15} /><span>ใช้ Gemini API ผ่าน endpoint ของ Google โดยอัตโนมัติ ขอ API key ได้จาก Google AI Studio</span></div>}
           <div className="field">
             <label htmlFor="ai-api-key">API key</label>
             <input id="ai-api-key" type="password" autoComplete="new-password" maxLength={4096} placeholder={hasSavedKey ? 'มี key บันทึกแล้ว · กรอกใหม่เพื่อแทนที่' : 'วาง API key ของคุณ'} value={apiKey} onChange={(event) => { setApiKey(event.target.value); setStatus({ kind: 'idle', message: '' }); setFormMessage('') }} />
@@ -164,8 +237,8 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
         {formMessage && <p className="settings-message" role="status">{formMessage}</p>}
 
         <div className="settings-actions">
-          <button className="button button-outline" type="button" onClick={() => void testConnection()} disabled={testing || loading || (!hasSavedKey && !apiKey.trim())}>{testing ? <LoaderCircle className="spin" size={15} /> : <Wifi size={15} />}{testing ? 'กำลังทดสอบ…' : 'ทดสอบการเชื่อมต่อ'}</button>
-          <button className="button button-primary" type="submit" disabled={saving || loading || (!hasSavedKey && !apiKey.trim())}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}{saving ? 'กำลังบันทึก…' : hasSavedKey && apiKey.trim() ? 'บันทึก / เปลี่ยน key' : 'บันทึกการตั้งค่า'}</button>
+          <button className="button button-outline" type="button" onClick={() => void testConnection()} disabled={testing || loading || !model.trim() || (!hasSavedKey && !apiKey.trim())}>{testing ? <LoaderCircle className="spin" size={15} /> : <Wifi size={15} />}{testing ? 'กำลังทดสอบ…' : 'ทดสอบการเชื่อมต่อ'}</button>
+          <button className="button button-primary" type="submit" disabled={saving || loading || !model.trim() || (!hasSavedKey && !apiKey.trim())}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}{saving ? 'กำลังบันทึก…' : hasSavedKey && apiKey.trim() ? 'บันทึก / เปลี่ยน key' : 'บันทึกการตั้งค่า'}</button>
         </div>
         {hasSavedKey && <button className="clear-key-button" type="button" onClick={() => void clearSettings()} disabled={clearing}>{clearing ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}ลบการตั้งค่าและ API key</button>}
       </form>

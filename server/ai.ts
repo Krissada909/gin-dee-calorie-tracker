@@ -140,20 +140,20 @@ function providerMessage(payload: ChatResponse | null, apiKey: string) {
   return raw.split(apiKey).join('[ซ่อน API key]').replace(/[\u0000-\u001f]/g, ' ').slice(0, 220)
 }
 
-function requestPublicJson(urlValue: string, apiKey: string, requestBody: string) {
+function requestPublicJson(urlValue: string, apiKey: string, requestBody?: string, maxBytes = 512_000) {
   const url = new URL(urlValue)
-  return new Promise<{ status: number; payload: ChatResponse | null }>((resolve, reject) => {
+  return new Promise<{ status: number; payload: unknown }>((resolve, reject) => {
     const request = httpsRequest({
       protocol: 'https:',
       hostname: url.hostname.replace(/^\[|\]$/g, ''),
       port: url.port || 443,
       path: `${url.pathname}${url.search}`,
-      method: 'POST',
+      method: requestBody === undefined ? 'GET' : 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Content-Length': String(Buffer.byteLength(requestBody)),
+        Accept: 'application/json',
         Host: url.host,
+        ...(requestBody === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(requestBody)) }),
       },
       lookup(hostname, options, callback) {
         dnsLookup(hostname, { all: true, verbatim: true }, (error, addresses) => {
@@ -177,35 +177,38 @@ function requestPublicJson(urlValue: string, apiKey: string, requestBody: string
       let length = 0
       response.on('data', (chunk: Buffer) => {
         length += chunk.length
-        if (length > 512_000) {
+        if (length > maxBytes) {
           request.destroy(new Error('provider response too large'))
           return
         }
         chunks.push(chunk)
       })
       response.on('end', () => {
-        let payload: ChatResponse | null = null
-        try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as ChatResponse } catch { /* provider may return non-JSON errors */ }
+        let payload: unknown = null
+        try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { /* provider may return non-JSON errors */ }
         resolve({ status: response.statusCode || 502, payload })
       })
     })
     request.on('error', reject)
     request.setTimeout(20_000, () => request.destroy(new Error('provider request timed out')))
-    request.end(requestBody)
+    if (requestBody === undefined) request.end()
+    else request.end(requestBody)
   })
+}
+
+function providerStatusError(status: number, payload: ChatResponse | null, apiKey: string) {
+  const detail = providerMessage(payload, apiKey)
+  if (status === 401 || status === 403) return new AIRequestError(502, 'API key ไม่ถูกต้องหรือยังไม่มีสิทธิ์ใช้ model นี้')
+  if (status === 404) return new AIRequestError(502, 'ไม่พบ model หรือ endpoint กรุณาตรวจ Base URL และชื่อ model')
+  return new AIRequestError(502, detail ? `ผู้ให้บริการปฏิเสธคำขอ: ${detail}` : `ผู้ให้บริการตอบกลับด้วยสถานะ ${status}`)
 }
 
 async function callChat(settings: AISettings, messages: ChatMessage[], maxTokens: number) {
   const requestBody = JSON.stringify({ model: settings.model, temperature: 0.2, max_tokens: maxTokens, messages })
   try {
     const { status, payload } = await requestPublicJson(completionUrl(settings.baseUrl), settings.apiKey, requestBody)
-    if (status < 200 || status >= 300) {
-      const detail = providerMessage(payload, settings.apiKey)
-      if (status === 401 || status === 403) throw new AIRequestError(502, 'API key ไม่ถูกต้องหรือยังไม่มีสิทธิ์ใช้ model นี้')
-      if (status === 404) throw new AIRequestError(502, 'ไม่พบ model หรือ endpoint กรุณาตรวจ Base URL และชื่อ model')
-      throw new AIRequestError(502, detail ? `ผู้ให้บริการปฏิเสธคำขอ: ${detail}` : `ผู้ให้บริการตอบกลับด้วยสถานะ ${status}`)
-    }
-    return payload
+    if (status < 200 || status >= 300) throw providerStatusError(status, payload as ChatResponse | null, settings.apiKey)
+    return payload as ChatResponse | null
   } catch (error) {
     if (error instanceof AIRequestError) throw error
     if (error instanceof Error && error.message.includes('timed out')) throw new AIRequestError(504, 'ผู้ให้บริการใช้เวลานานเกินไป ลองอีกครั้ง')
@@ -217,6 +220,32 @@ function messageText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) return content.map((part) => part && typeof part === 'object' && 'text' in part ? String((part as { text: unknown }).text) : '').join('\n')
   return ''
+}
+
+const NON_CHAT_MODEL = /embed|whisper|tts|dall-e|moderation|davinci|babbage|audio|realtime|transcribe|imagen|image-gen|-image|sora|aqa|robotics|computer-use|live/i
+
+export async function listProviderModels(settings: AISettings): Promise<string[]> {
+  const base = settings.baseUrl.replace(/\/chat\/completions$/i, '')
+  try {
+    const { status, payload } = await requestPublicJson(`${base}/models`, settings.apiKey, undefined, 2_000_000)
+    if (status < 200 || status >= 300) throw providerStatusError(status, payload as ChatResponse | null, settings.apiKey)
+    const data = payload && typeof payload === 'object' ? (payload as { data?: unknown }).data : undefined
+    if (!Array.isArray(data)) throw new AIRequestError(502, 'ผู้ให้บริการนี้ไม่ส่งรายการโมเดลกลับมา กรอกชื่อ model เองได้')
+    const ids = new Set<string>()
+    for (const item of data) {
+      const raw = item && typeof item === 'object' ? (item as { id?: unknown }).id : undefined
+      if (typeof raw !== 'string') continue
+      const id = raw.replace(/^models\//, '').trim()
+      if (!id || id.length > 200 || /[\s\u0000-\u001f]/.test(id) || NON_CHAT_MODEL.test(id)) continue
+      if (settings.provider === 'gemini' && !/^gemini/i.test(id)) continue
+      ids.add(id)
+    }
+    return [...ids].sort((a, b) => b.localeCompare(a, 'en', { numeric: true })).slice(0, 300)
+  } catch (error) {
+    if (error instanceof AIRequestError) throw error
+    if (error instanceof Error && error.message.includes('timed out')) throw new AIRequestError(504, 'ผู้ให้บริการใช้เวลานานเกินไป ลองอีกครั้ง')
+    throw new AIRequestError(502, 'เชื่อมต่อผู้ให้บริการไม่ได้ กรุณาตรวจ Base URL และลองอีกครั้ง')
+  }
 }
 
 export async function testProviderConnection(settings: AISettings) {
