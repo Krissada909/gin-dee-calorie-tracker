@@ -56,6 +56,8 @@ AI_MODEL=<vision model name>
 3. ตั้ง `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` ใน Project Settings > Environment Variables หากต้องการใช้ AI ให้เพิ่ม `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` และ `AI_BASE_URL` ตาม provider ที่เลือก
 4. Deploy แล้วเพิ่ม URL ของเว็บใน Supabase Auth > URL Configuration > Site URL และ Redirect URLs เพื่อให้ลิงก์ Email OTP กลับมาที่แอปได้
 
+ไฟล์ Function ใน `api/` ให้ Vercel route ใต้ `/api/...` อัตโนมัติ ส่วน SPA rewrite ใช้ส่งหน้าเว็บไปที่ `index.html`; ดู [Vercel Rewrites](https://vercel.com/docs/routing/rewrites) และ [Vercel Functions](https://vercel.com/docs/functions) เพิ่มเติม
+
 อย่า commit `.env.local` หรือ API keys; มี `.gitignore` สำหรับไฟล์ environment อยู่แล้ว
 
 ## วิธีคำนวณ

@@ -2,7 +2,6 @@
   "buildCommand": "pnpm build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/analyze-food", "destination": "/api/analyze-food" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
