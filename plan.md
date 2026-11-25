@@ -11,9 +11,11 @@
 
 `/api/analyze-food` ใช้ provider settings ของบัญชีที่ล็อกอินเท่านั้น และส่งรูปให้โมเดลภาพก่อนคืนชื่อ/แคลอรี/portion/note สำหรับผู้ใช้ตรวจแก้ก่อนบันทึก หากไม่มี settings จะแจ้งให้ตั้งค่าหรือกรอกเอง Endpoint ของ OpenAI-compatible รับเฉพาะ HTTPS base URL; resolver ตรวจและ pin DNS lookup ตอนเชื่อมต่อ, ปฏิเสธคำตอบ private/loopback IP, จำกัดเวลา/ขนาด response และไม่ตาม redirect เพื่อป้องกัน SSRF และไม่ส่ง API key ไปยัง origin อื่น; Gemini ใช้ `https://generativelanguage.googleapis.com/v1beta/openai` และค่าเริ่มต้น `gemini-3.8-flash` ที่ตรวจจาก [รายการโมเดลทางการของ Google](https://aistudio.google.com/docs/models) และ [OpenAI compatibility](https://aistudio.google.com/docs/openai)
 
-ค่าฝั่ง browser ที่ต้องตั้งใน Vercel มี `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` เท่านั้นสำหรับ Supabase client; ไม่ต้องมี global AI key ใน Vercel เพราะผู้ใช้แต่ละคนบันทึก key ของตนใน Settings. ยังมีโหมดตัวอย่าง local-only เมื่อผู้ใช้เลือกเองหรือไม่มี Supabase config. คง `vercel.json`, SQL migrations และคู่มือการตั้งค่าให้พร้อม deploy
+ค่าฝั่ง browser ที่ต้องตั้งใน Vercel มี `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY` เท่านั้นสำหรับ Supabase client; ไม่ต้องมี global AI key ใน Vercel เพราะผู้ใช้แต่ละคนบันทึก key ของตนใน Settings. แอปกำหนดให้ผู้ใช้เข้าสู่ระบบด้วย Google ผ่าน Supabase ก่อนใช้งาน; ไม่มีโหมดตัวอย่างหรือการบันทึกข้อมูลส่วนตัวแบบ local-only. คง `vercel.json`, SQL migrations และคู่มือการตั้งค่าให้พร้อม deploy
 
-การคำนวณ: แคลอรีอาหารรวมต่อวันคือผลรวมอาหาร; พลังงานจากกิจกรรมคือผลรวมแคลอรีที่ผู้ใช้กรอก; สมดุลสุทธิ = พลังงานอาหาร − พลังงานกิจกรรม; ระยะทางรวมเป็นกิโลเมตร ไม่เรียกค่ากิจกรรมว่า TDEE/BMR เพราะยังไม่มีข้อมูลที่จำเป็นสำหรับค่าดังกล่าว
+การคำนวณ: แคลอรีอาหารรวมต่อวันคือผลรวมอาหาร; พลังงานจากกิจกรรมคือผลรวมแคลอรีที่ผู้ใช้กรอก; สมดุลสุทธิเดิม = พลังงานอาหาร − พลังงานกิจกรรม. เพิ่มโปรไฟล์ประมาณการพลังงานรายวันแบบสมัครใจ (อายุ 19+, sex category สำหรับสูตรชาย/หญิง, ส่วนสูง, น้ำหนัก และระดับกิจกรรม) คำนวณ EER ตามสมการผู้ใหญ่อายุ 19+ ใน National Academies 2023 Table S-3 และแสดงเป็นค่าประมาณเท่านั้น; ถือ EER ≈ TEE เมื่อคงน้ำหนัก ไม่ใช่คำแนะนำทางการแพทย์. ไม่บวก/หักแคลอรีกิจกรรมจาก/เข้า EER เนื่องจากกิจกรรมถูกรวมในระดับกิจกรรมของสูตรแล้ว. ไม่เหมาะสำหรับอายุต่ำกว่า 19 ปี ผู้ตั้งครรภ์ หรือให้นมบุตร ตามข้อจำกัดของ NIDDK planner. ข้อมูลโปรไฟล์อยู่ในตารางต่อ auth.users พร้อม RLS owner-only; ต้องเข้าสู่ระบบเพื่ออ่านหรือบันทึกโปรไฟล์ และแบบฟอร์มเริ่มว่างเพื่อไม่ใส่ข้อมูลส่วนบุคคลแทนผู้ใช้.
+
+เพิ่มรายงานช่วงวันแบบ weekly/custom: เลือกสัปดาห์ปัจจุบันเป็น preset หรือวันที่เริ่ม/สิ้นสุดเอง; รวมวันปฏิทินทั้งช่วงแบบ inclusive และคำนวณค่าเฉลี่ยต่อวันโดยนับวันที่ไม่มีรายการเป็นศูนย์. แสดงยอดรวมและค่าเฉลี่ยรายวันของ intake, EER estimate, difference (intake − EER), workout kcal และระยะทาง; รายงานแยก query ช่วงวันที่เอง ไม่ใช้ข้อมูล selected day ที่ dashboard โหลดอยู่. Workout kcal แสดงแยก ไม่หักออกจาก EER/difference.
 
 ## โครงสร้างโปรเจกต์
 - `src/`: UI dashboard, authentication gate, Settings page, forms, responsive styles, helpers และ Supabase client
@@ -21,7 +23,7 @@
 - `server/ai.ts`: ตรวจ bearer token, อ่าน settings ของผู้ใช้ผ่าน RLS, ตรวจ endpoint และเรียก provider โดยไม่บันทึก key ลง log
 - `api/analyze-food.ts`: Vercel Function สำหรับ vision estimation ด้วย settings ของบัญชีที่ล็อกอิน
 - `api/test-ai.ts`: Vercel Function ทดสอบ key/provider ที่กรอกหรือ settings ที่บันทึกแล้ว
-- `supabase/schema.sql`, `supabase/migrations/`: ตารางอาหาร/กิจกรรม/AI settings, indexes, RLS และ private storage policies
+- `supabase/schema.sql`, `supabase/migrations/`: ตารางอาหาร/กิจกรรม/AI settings/energy profile, indexes, RLS และ private storage policies
 - `public/manus-routes.json`, `public/brand.svg`, `app.config.ts`: route manifest และ branding
 - `.env.example`, `vercel.json`, `README.md`: environment template, routing และคู่มือ local/Supabase/Vercel
 

@@ -9,6 +9,7 @@ import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, mealLabels, supabase, type Activity, type Meal, type MealType } from './lib/supabase'
 import { signedFoodPhotoUrl, uploadFoodPhoto } from './lib/foodPhotos'
 import AISettingsPage from './components/AISettings'
+import EnergyReport from './components/EnergyReport'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const mealTypes: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -280,6 +281,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<'meal' | 'activity' | null>(null)
   const [page, setPage] = useState<'dashboard' | 'settings'>('dashboard')
+  const [estimatedDailyNeed, setEstimatedDailyNeed] = useState<number | null>(null)
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number | undefined>(undefined)
   const today = dateKey()
@@ -435,6 +437,12 @@ export default function App() {
           <div className="metric-stack"><article className="metric-card intake-metric"><div className="metric-top"><span className="metric-icon"><Utensils size={17} /></span><span className="metric-direction"><ArrowDownRight size={16} /></span></div><span className="metric-label">พลังงานที่รับเข้า</span><strong>{formatCalories(totals.intake)} <small>kcal</small></strong><span className="metric-foot">รวมจากอาหารที่บันทึก</span></article><article className="metric-card burn-metric"><div className="metric-top"><span className="metric-icon"><Flame size={17} /></span><span className="metric-direction"><ArrowUpRight size={16} /></span></div><span className="metric-label">เผาผลาญจากกิจกรรม</span><strong>{formatCalories(totals.burned)} <small>kcal</small></strong><span className="metric-foot"><Footprints size={13} /> {totals.distance.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม. ที่วิ่ง/เคลื่อนไหว</span></article></div>
         </section>
 
+        <article className="daily-energy-estimate" aria-label="ความต้องการพลังงานโดยประมาณรายวัน">
+          <div><span className="section-index">ความต้องการพลังงานต่อวัน</span><strong>{estimatedDailyNeed === null ? 'ยังไม่ได้ตั้งค่า' : `${formatCalories(estimatedDailyNeed)} kcal`}</strong><small>{estimatedDailyNeed === null ? 'กรอกโปรไฟล์โดยสมัครใจในส่วนประมาณการด้านล่าง' : 'ค่าประมาณ EER/TDEE จากโปรไฟล์ของคุณ'}</small></div>
+          <div className="daily-energy-difference"><span>อาหารเทียบกับประมาณการ</span><strong>{estimatedDailyNeed === null ? '—' : `${formatCalories(totals.intake - estimatedDailyNeed)} kcal`}</strong><small>คำนวณจากอาหารที่บันทึกในวันที่เลือก</small></div>
+          <p><CircleHelp size={14} /> กิจกรรมที่บันทึกแสดงแยกต่างหาก ไม่บวก/หักซ้ำกับ EER</p>
+        </article>
+
         <div className="section-heading" id="meals"><div><span className="section-index">01 / FOOD JOURNAL</span><h2>มื้ออาหาร <span>{meals.length}</span></h2></div><button className="button button-primary" onClick={() => setModal('meal')}><Plus size={17} /> เพิ่มมื้ออาหาร</button></div>
         <section className="journal-card" aria-label="รายการมื้ออาหาร">
           <div className="journal-card-head"><div><strong>บันทึกของวันนี้</strong><span>{isToday ? 'มื้อที่คุณบันทึกไว้ตลอดวัน' : formatDateLabel(selectedDate)}</span></div><span className="journal-total">รวม <b>{formatCalories(totals.intake)}</b> kcal</span></div>
@@ -447,6 +455,8 @@ export default function App() {
           {activities.length ? <div className="activity-list">{activities.map((item) => <article className="activity-row" key={item.id}><span className="activity-badge"><Footprints size={18} /></span><div className="activity-description"><strong>{item.activity}</strong><span>{formatTime(item.performed_at)} · {item.distance_km > 0 ? `${item.distance_km.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : 'ไม่ได้ระบุระยะทาง'}</span></div><div className="activity-calories"><strong>{formatCalories(item.calories_burned)}</strong><small>kcal</small></div><button className="row-delete" title="ลบกิจกรรมนี้" aria-label={`ลบ ${item.activity}`} onClick={() => void deleteActivity(item)}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={<Footprints size={22} />} title="ยังไม่มีบันทึกการเคลื่อนไหว" description="วิ่งหรือออกกำลังกายวันนี้? เพิ่มแคลอรีที่ใช้และระยะทางได้เลย" action="เพิ่มกิจกรรม" onClick={() => setModal('activity')} />}
           {activities.length > 0 && <button className="add-row-button activity-add" onClick={() => setModal('activity')}><Plus size={15} /> เพิ่มกิจกรรม</button>}
         </section>
+
+        <EnergyReport session={session} onEstimateChange={setEstimatedDailyNeed} />
 
         <footer className="dashboard-foot"><span><CircleHelp size={14} /> พลังงานที่เผาผลาญในหน้านี้รวมเฉพาะกิจกรรมที่คุณบันทึก ไม่ใช่พลังงานพื้นฐานของร่างกาย</span><span>ทำอย่างสม่ำเสมอ ในแบบของคุณ</span></footer>
       </main>
