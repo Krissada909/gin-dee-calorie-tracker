@@ -15,11 +15,12 @@
 
 การคำนวณ: แคลอรีอาหารรวมต่อวันคือผลรวมอาหาร; พลังงานจากกิจกรรมคือผลรวมแคลอรีที่ผู้ใช้กรอก; สมดุลสุทธิเดิม = พลังงานอาหาร − พลังงานกิจกรรม. เพิ่มโปรไฟล์ประมาณการพลังงานรายวันแบบสมัครใจ (อายุ 19+, sex category สำหรับสูตรชาย/หญิง, ส่วนสูง, น้ำหนัก และระดับกิจกรรม) คำนวณ EER ตามสมการผู้ใหญ่อายุ 19+ ใน National Academies 2023 Table S-3 และแสดงเป็นค่าประมาณเท่านั้น; ถือ EER ≈ TEE เมื่อคงน้ำหนัก ไม่ใช่คำแนะนำทางการแพทย์. ไม่บวก/หักแคลอรีกิจกรรมจาก/เข้า EER เนื่องจากกิจกรรมถูกรวมในระดับกิจกรรมของสูตรแล้ว. ไม่เหมาะสำหรับอายุต่ำกว่า 19 ปี ผู้ตั้งครรภ์ หรือให้นมบุตร ตามข้อจำกัดของ NIDDK planner. ข้อมูลโปรไฟล์อยู่ในตารางต่อ auth.users พร้อม RLS owner-only; ต้องเข้าสู่ระบบเพื่ออ่านหรือบันทึกโปรไฟล์ และแบบฟอร์มเริ่มว่างเพื่อไม่ใส่ข้อมูลส่วนบุคคลแทนผู้ใช้.
 
-เพิ่มรายงานช่วงวันแบบ weekly/custom: เลือกสัปดาห์ปัจจุบันเป็น preset หรือวันที่เริ่ม/สิ้นสุดเอง; รวมวันปฏิทินทั้งช่วงแบบ inclusive และคำนวณค่าเฉลี่ยต่อวันโดยนับวันที่ไม่มีรายการเป็นศูนย์. แสดงยอดรวมและค่าเฉลี่ยรายวันของ intake, EER estimate, difference (intake − EER), workout kcal และระยะทาง; รายงานแยก query ช่วงวันที่เอง ไม่ใช้ข้อมูล selected day ที่ dashboard โหลดอยู่. Workout kcal แสดงแยก ไม่หักออกจาก EER/difference.
+ย้ายโปรไฟล์ EER ส่วนตัวออกจาก dashboard ไปหน้า Settings โดยวางต่อจากการตั้งค่า AI และคงฟอร์มบันทึก/ลบโปรไฟล์ไว้. เพิ่มเมนูและหน้า “รายงาน” แยกสำหรับช่วงวันแบบ weekly/custom: เลือกสัปดาห์ปัจจุบันเป็น preset หรือวันที่เริ่ม/สิ้นสุดเอง; รวมวันปฏิทินทั้งช่วงแบบ inclusive และคำนวณค่าเฉลี่ยต่อวันโดยนับวันที่ไม่มีรายการเป็นศูนย์. แสดง dashboard ผู้บริหารที่สแกนง่าย: intake, EER, difference (intake − EER), workout kcal, ระยะทาง และแนวโน้มรายวัน; รายงานแยก query ช่วงวันที่เอง ไม่ใช้ข้อมูล selected day ที่ dashboard โหลดอยู่. แสดงสถานะชัดเมื่อยังไม่ได้ตั้งค่าโปรไฟล์ EER และไม่แสดงส่วนต่างเสมือนเป็นค่าพลังงานสุทธิหรือหัก workout ซ้ำ. Workout kcal แสดงแยก ไม่หักออกจาก EER/difference.
 
 ## โครงสร้างโปรเจกต์
-- `src/`: UI dashboard, authentication gate, Settings page, forms, responsive styles, helpers และ Supabase client
-- `src/components/AISettings.tsx`: เลือก provider, กรอก model/base URL/key, บันทึกและทดสอบต่อบัญชี
+- `src/`: UI dashboard, navigation ระหว่างภาพรวม/รายงาน/Settings, forms, responsive styles, helpers และ Supabase client
+- `src/components/AISettings.tsx`: Settings page เลือก provider, กรอก model/base URL/key, บันทึกและทดสอบต่อบัญชี; EER profile อยู่ใน Settings เช่นกัน
+- `src/components/EnergyReport.tsx`: EER profile form สำหรับ Settings และ executive report dashboard แยกหน้า พร้อม query ช่วงวันแบบ inclusive/paginated
 - `server/ai.ts`: ตรวจ bearer token, อ่าน settings ของผู้ใช้ผ่าน RLS, ตรวจ endpoint และเรียก provider โดยไม่บันทึก key ลง log
 - `api/analyze-food.ts`: Vercel Function สำหรับ vision estimation ด้วย settings ของบัญชีที่ล็อกอิน
 - `api/test-ai.ts`: Vercel Function ทดสอบ key/provider ที่กรอกหรือ settings ที่บันทึกแล้ว
@@ -31,7 +32,7 @@
 - **Design Movement:** สมุดบันทึกสุขภาพร่วมสมัยที่ผสานความเป็น editorial กับ dashboard อ่อนโยน
 - **Core Principles:** ข้อมูลอ่านง่ายก่อนตกแต่ง; แต่ละมื้อรู้สึกเป็นบันทึกส่วนตัว; ตัวเลขแคลอรีมีลำดับชัด; บันทึกภาพ/กิจกรรมได้เร็วบนมือถือ
 - **Color Philosophy:** พื้นครีมอุ่นและกระดาษขาวนวลช่วยให้อาหารเด่น; หมึกคราม `#243B53` ให้ความน่าเชื่อถือ; เหลืองอำพัน `#F2C14E` เน้นพลังงานและการลงมือทำ; สีเขียวสงวนไว้สำหรับสัญญาณกิจกรรม
-- **Layout Paradigm:** dashboard แบบบันทึกแนวตั้ง มีสรุปพลังงานรายวันด้านบนและ timeline มื้อ/กิจกรรมด้านล่าง; Settings เป็นหน้าแบบฟอร์มในกรอบกระดาษเดียวกับ dashboard และเป็น bottom-friendly บนมือถือ
+- **Layout Paradigm:** dashboard แบบบันทึกแนวตั้ง มีสรุปพลังงานรายวันด้านบนและ timeline มื้อ/กิจกรรมด้านล่าง; รายงานเป็นหน้า executive overview แยกด้วย metric cards และแนวโน้มรายวัน; Settings รวมการตั้งค่า AI และโปรไฟล์ EER ส่วนตัวในกรอบกระดาษเดียวกับ dashboard และเป็น bottom-friendly บนมือถือ
 - **Signature Elements:** ตัวเลขพลังงานแบบหมึกพิมพ์ขนาดใหญ่; เส้นคั่นบางและป้ายเวลาแบบ margin note; สัญลักษณ์ช้อนลายเส้นสำหรับแบรนด์
 - **Interaction Philosophy:** เพิ่มอาหารจากภาพแล้วทบทวนค่าประเมิน; ยอดอัปเดตทันที; สถานะทดสอบ AI ชัดเจนและไม่เปิดเผย key; ผู้ใช้แก้ไขและลบรายการได้สะดวก
 - **Animation:** transition 160–220ms ของ sheet และการอัปเดตยอด; เคารพ `prefers-reduced-motion`; ไม่มีการเคลื่อนไหวรบกวนการอ่าน

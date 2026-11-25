@@ -184,9 +184,9 @@ export default function AISettingsPage({ session, onBack }: { session: Session; 
     <section className="settings-title-row">
       <div>
         <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> กลับภาพรวม</button>
-        <p className="eyebrow">PERSONAL AI CONNECTION</p>
-        <h1>ตั้งค่า AI</h1>
-        <p className="date-label">ตั้งค่าเฉพาะบัญชี {session.user.email || ''} เพื่อประเมินอาหารจากรูป</p>
+        <p className="eyebrow">PERSONAL SETTINGS</p>
+        <h1>ตั้งค่า</h1>
+        <p className="date-label">ตั้งค่าการเชื่อมต่อ AI และข้อมูลประมาณการส่วนตัวสำหรับบัญชี {session.user.email || ''}</p>
       </div>
       <span className="settings-title-icon"><KeyRound size={22} /></span>
     </section>

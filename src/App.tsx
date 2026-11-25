@@ -280,8 +280,7 @@ export default function App() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<'meal' | 'activity' | null>(null)
-  const [page, setPage] = useState<'dashboard' | 'settings'>('dashboard')
-  const [estimatedDailyNeed, setEstimatedDailyNeed] = useState<number | null>(null)
+  const [page, setPage] = useState<'dashboard' | 'reports' | 'settings'>('dashboard')
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number | undefined>(undefined)
   const today = dateKey()
@@ -410,9 +409,10 @@ export default function App() {
       <span className="nav-caption">สมุดบันทึกของฉัน</span>
       <nav className="side-nav" aria-label="เมนูหลัก">
         <button type="button" className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><span className="nav-icon"><Salad size={18} /></span>ภาพรวมวันนี้</button>
+        <button type="button" className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => setPage('reports')}><span className="nav-icon"><ActivityIcon size={18} /></span>รายงาน</button>
         <a href="#meals" className="nav-item" onClick={() => setPage('dashboard')}><span className="nav-icon"><Utensils size={18} /></span>บันทึกอาหาร</a>
         <a href="#activities" className="nav-item" onClick={() => setPage('dashboard')}><span className="nav-icon"><Footprints size={18} /></span>กิจกรรมของฉัน</a>
-        <button type="button" className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><span className="nav-icon"><SettingsIcon size={18} /></span>ตั้งค่า AI</button>
+        <button type="button" className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><span className="nav-icon"><SettingsIcon size={18} /></span>ตั้งค่า</button>
       </nav>
       <div className="sidebar-spacer" />
       <div className="privacy-note"><span className="privacy-mark"><Check size={13} /></span><div><strong>ข้อมูลส่วนตัว</strong><small>บันทึกในบัญชีของคุณ</small></div></div>
@@ -421,8 +421,9 @@ export default function App() {
 
     <div className="main-column" id="top">
       <header className="topbar"><a className="mobile-brand" href="#top"><IconMark /><span>กินดี</span><span className="brand-period">.</span></a><div className="topbar-right"><span className="mode-pill"><span />บันทึกส่วนตัว</span><button className="icon-button notification-button" aria-label="แจ้งเตือน"><Bell size={18} /></button><div className="user-menu"><span className="avatar">{session.user.email?.[0]?.toUpperCase() || 'U'}</span><span className="user-name">{session.user.email?.split('@')[0]}</span><ChevronDown size={14} /><button className="signout-button" title="ออกจากระบบ" onClick={() => void supabase?.auth.signOut()}><LogOut size={15} /></button></div></div></header>
-      {page === 'settings' && <AISettingsPage session={session} onBack={() => setPage('dashboard')} />}
-      <main className={`dashboard ${page === 'settings' ? 'dashboard-hidden' : ''}`}>
+      {page === 'settings' && <><AISettingsPage session={session} onBack={() => setPage('dashboard')} /><EnergyReport session={session} mode="profile" /></>}
+      {page === 'reports' && <EnergyReport session={session} mode="report" />}
+      <main className={`dashboard ${page !== 'dashboard' ? 'dashboard-hidden' : ''}`}>
         <section className="welcome-row">
           <div><div className="eyebrow">บันทึกเล็ก ๆ ที่ทำให้เข้าใจตัวเอง</div><h1>{isToday ? 'วันนี้ของคุณ' : 'บันทึกประจำวัน'}</h1><p className="date-label">{formatDateLabel(selectedDate)}</p></div>
           <div className="date-switcher"><button className="date-arrow" aria-label="วันก่อนหน้า" onClick={() => shiftDate(-1)}><ArrowLeft size={17} /></button><button className="date-today" onClick={() => setSelectedDate(today)} disabled={isToday}><Clock3 size={14} /> วันนี้</button><button className="date-arrow" aria-label="วันถัดไป" disabled={selectedDate >= today} onClick={() => shiftDate(1)}><ArrowRight size={17} /></button></div>
@@ -437,12 +438,6 @@ export default function App() {
           <div className="metric-stack"><article className="metric-card intake-metric"><div className="metric-top"><span className="metric-icon"><Utensils size={17} /></span><span className="metric-direction"><ArrowDownRight size={16} /></span></div><span className="metric-label">พลังงานที่รับเข้า</span><strong>{formatCalories(totals.intake)} <small>kcal</small></strong><span className="metric-foot">รวมจากอาหารที่บันทึก</span></article><article className="metric-card burn-metric"><div className="metric-top"><span className="metric-icon"><Flame size={17} /></span><span className="metric-direction"><ArrowUpRight size={16} /></span></div><span className="metric-label">เผาผลาญจากกิจกรรม</span><strong>{formatCalories(totals.burned)} <small>kcal</small></strong><span className="metric-foot"><Footprints size={13} /> {totals.distance.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม. ที่วิ่ง/เคลื่อนไหว</span></article></div>
         </section>
 
-        <article className="daily-energy-estimate" aria-label="ความต้องการพลังงานโดยประมาณรายวัน">
-          <div><span className="section-index">ความต้องการพลังงานต่อวัน</span><strong>{estimatedDailyNeed === null ? 'ยังไม่ได้ตั้งค่า' : `${formatCalories(estimatedDailyNeed)} kcal`}</strong><small>{estimatedDailyNeed === null ? 'กรอกโปรไฟล์โดยสมัครใจในส่วนประมาณการด้านล่าง' : 'ค่าประมาณ EER/TDEE จากโปรไฟล์ของคุณ'}</small></div>
-          <div className="daily-energy-difference"><span>อาหารเทียบกับประมาณการ</span><strong>{estimatedDailyNeed === null ? '—' : `${formatCalories(totals.intake - estimatedDailyNeed)} kcal`}</strong><small>คำนวณจากอาหารที่บันทึกในวันที่เลือก</small></div>
-          <p><CircleHelp size={14} /> กิจกรรมที่บันทึกแสดงแยกต่างหาก ไม่บวก/หักซ้ำกับ EER</p>
-        </article>
-
         <div className="section-heading" id="meals"><div><span className="section-index">01 / FOOD JOURNAL</span><h2>มื้ออาหาร <span>{meals.length}</span></h2></div><button className="button button-primary" onClick={() => setModal('meal')}><Plus size={17} /> เพิ่มมื้ออาหาร</button></div>
         <section className="journal-card" aria-label="รายการมื้ออาหาร">
           <div className="journal-card-head"><div><strong>บันทึกของวันนี้</strong><span>{isToday ? 'มื้อที่คุณบันทึกไว้ตลอดวัน' : formatDateLabel(selectedDate)}</span></div><span className="journal-total">รวม <b>{formatCalories(totals.intake)}</b> kcal</span></div>
@@ -456,11 +451,9 @@ export default function App() {
           {activities.length > 0 && <button className="add-row-button activity-add" onClick={() => setModal('activity')}><Plus size={15} /> เพิ่มกิจกรรม</button>}
         </section>
 
-        <EnergyReport session={session} onEstimateChange={setEstimatedDailyNeed} />
-
         <footer className="dashboard-foot"><span><CircleHelp size={14} /> พลังงานที่เผาผลาญในหน้านี้รวมเฉพาะกิจกรรมที่คุณบันทึก ไม่ใช่พลังงานพื้นฐานของร่างกาย</span><span>ทำอย่างสม่ำเสมอ ในแบบของคุณ</span></footer>
       </main>
-      <nav className="mobile-nav"><a href="#summary" className={`mobile-nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><Salad size={19} /><span>ภาพรวม</span></a><a href="#meals" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Utensils size={19} /><span>อาหาร</span></a><a href="#activities" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Footprints size={19} /><span>กิจกรรม</span></a><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><SettingsIcon size={19} /><span>ตั้งค่า</span></button></nav>
+      <nav className="mobile-nav"><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><Salad size={19} /><span>ภาพรวม</span></button><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'reports' ? 'active' : ''}`} onClick={() => setPage('reports')}><ActivityIcon size={19} /><span>รายงาน</span></button><a href="#meals" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Utensils size={19} /><span>อาหาร</span></a><a href="#activities" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Footprints size={19} /><span>กิจกรรม</span></a><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><SettingsIcon size={19} /><span>ตั้งค่า</span></button></nav>
     </div>
     {modal === 'meal' && <MealComposer key={`meal-${selectedDate}`} date={selectedDate} accessToken={session.access_token} onClose={() => setModal(null)} onSave={saveMeal} />}
     {modal === 'activity' && <ActivityComposer key={`activity-${selectedDate}`} date={selectedDate} onClose={() => setModal(null)} onSave={saveActivity} />}
