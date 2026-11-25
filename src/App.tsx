@@ -12,6 +12,7 @@ import AISettingsPage from './components/AISettings'
 import EnergyReport from './components/EnergyReport'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+type DayEntries = { meals: Meal[]; activities: Activity[] }
 const mealTypes: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
 const activityOptions = ['วิ่ง', 'เดิน', 'ปั่นจักรยาน', 'เวทเทรนนิ่ง', 'โยคะ', 'อื่น ๆ']
 function dateKey(date = new Date()) {
@@ -283,6 +284,8 @@ export default function App() {
   const [page, setPage] = useState<'dashboard' | 'reports' | 'settings'>('dashboard')
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number | undefined>(undefined)
+  const dayCache = useRef(new Map<string, DayEntries>())
+  const requestId = useRef(0)
   const today = dateKey()
   const isToday = selectedDate === today
 
@@ -308,29 +311,49 @@ export default function App() {
 
   const loadEntries = useCallback(async () => {
     if (!supabase || !session?.user) return
-    setLoading(true)
+    const userId = session.user.id
+    const cacheKey = `${userId}:${selectedDate}`
+    const cached = dayCache.current.get(cacheKey)
+    const thisRequest = ++requestId.current
+    if (cached) { setMeals(cached.meals); setActivities(cached.activities) }
+    setLoading(!cached)
     const range = dayRange(selectedDate)
     const [foodResult, activityResult] = await Promise.all([
       supabase.from('food_entries').select('id,user_id,eaten_at,meal_type,name,calories,image_path,note').gte('eaten_at', range.start).lt('eaten_at', range.end).order('eaten_at', { ascending: true }),
       supabase.from('exercise_entries').select('id,user_id,performed_at,activity,calories_burned,distance_km').gte('performed_at', range.start).lt('performed_at', range.end).order('performed_at', { ascending: true }),
     ])
     if (foodResult.error || activityResult.error) {
-      showToast(foodResult.error?.message || activityResult.error?.message || 'โหลดข้อมูลไม่สำเร็จ')
-      setLoading(false)
+      if (thisRequest === requestId.current) {
+        showToast(foodResult.error?.message || activityResult.error?.message || 'โหลดข้อมูลไม่สำเร็จ')
+        setLoading(false)
+      }
       return
     }
-    const foodRows = await Promise.all((foodResult.data || []).map(async (row) => ({
-      ...row,
-      image_url: await signedFoodPhotoUrl(row.image_path),
-    } as Meal)))
-    setMeals(foodRows)
-    setActivities((activityResult.data || []).map((row) => ({ ...row, distance_km: Number(row.distance_km) } as Activity)))
-    setLoading(false)
+    const foodRows = (foodResult.data || []).map((row) => ({ ...row, image_url: null } as Meal))
+    const activityRows = (activityResult.data || []).map((row) => ({ ...row, distance_km: Number(row.distance_km) } as Activity))
+    dayCache.current.set(cacheKey, { meals: foodRows, activities: activityRows })
+    if (thisRequest === requestId.current) {
+      setMeals(foodRows)
+      setActivities(activityRows)
+      setLoading(false)
+    }
+    // Photos are decorative; resolve them after the rows and totals are already visible.
+    void Promise.all(foodRows.filter((row) => row.image_path).map(async (row) => ({ id: row.id, url: await signedFoodPhotoUrl(row.image_path) })))
+      .then((photos) => {
+        if (!photos.length) return
+        const latest = dayCache.current.get(cacheKey)
+        if (!latest) return
+        const photoById = new Map(photos.map(({ id, url }) => [id, url]))
+        const updated = { ...latest, meals: latest.meals.map((meal) => photoById.has(meal.id) ? { ...meal, image_url: photoById.get(meal.id) ?? null } : meal) }
+        dayCache.current.set(cacheKey, updated)
+        if (thisRequest === requestId.current) setMeals(updated.meals)
+      })
+      .catch(() => { /* Keep the meal placeholder when a signed photo URL cannot be resolved. */ })
   }, [selectedDate, session, showToast])
 
   useEffect(() => {
     if (session) void loadEntries()
-    else { setMeals([]); setActivities([]) }
+    else { requestId.current++; setMeals([]); setActivities([]); setLoading(false) }
   }, [loadEntries, selectedDate, session])
 
   const totals = useMemo(() => ({
