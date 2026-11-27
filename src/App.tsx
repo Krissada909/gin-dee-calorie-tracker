@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity as ActivityIcon, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight,
-  Bell, Camera, Check, ChevronDown, CircleHelp, Clock3, Flame, Footprints,
+  Bell, Camera, Check, ChevronDown, CircleHelp, Clock3, Flame, Footprints, Pencil,
   ImagePlus, LoaderCircle, LogOut, Minus, Plus, Salad, Sparkles, Trash2,
   Settings as SettingsIcon, ShieldCheck, Utensils, X,
 } from 'lucide-react'
@@ -149,15 +149,18 @@ function AuthGate() {
   )
 }
 
-function MealComposer({ date, accessToken, onClose, onSave }: { date: string; accessToken?: string; onClose: () => void; onSave: (entry: Omit<Meal, 'id'>, photo?: File) => Promise<void> }) {
+function MealComposer({ date, accessToken, meal, onClose, onSave }: { date: string; accessToken?: string; meal?: Meal; onClose: () => void; onSave: (entry: Omit<Meal, 'id'>, photo?: File, existing?: Meal) => Promise<void> }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [mealType, setMealType] = useState<MealType>('lunch')
-  const [name, setName] = useState('')
-  const [calories, setCalories] = useState('')
-  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
+  const [mealType, setMealType] = useState<MealType>(meal?.meal_type || 'lunch')
+  const [name, setName] = useState(meal?.name || '')
+  const [calories, setCalories] = useState(meal ? String(meal.calories) : '')
+  const [time, setTime] = useState(() => meal ? new Date(meal.eaten_at).toTimeString().slice(0, 5) : new Date().toTimeString().slice(0, 5))
+  const [note, setNote] = useState(meal?.note || '')
+  const [day, setDay] = useState(meal ? dateKey(new Date(meal.eaten_at)) : date)
   const [photo, setPhoto] = useState<File>()
-  const [preview, setPreview] = useState('')
-  const [analysisNote, setAnalysisNote] = useState('')
+  const [removeExistingPhoto, setRemoveExistingPhoto] = useState(false)
+  const [preview, setPreview] = useState(meal?.image_url || '')
+  const [analysisNote, setAnalysisNote] = useState(meal?.note || '')
   const [busy, setBusy] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState('')
@@ -168,6 +171,7 @@ function MealComposer({ date, accessToken, onClose, onSave }: { date: string; ac
     try {
       const image = await readImage(file)
       setPhoto(image.file)
+      setRemoveExistingPhoto(false)
       setPreview(image.url)
       setAnalysisNote('ภาพพร้อมแล้ว กด “ให้ช่วยประเมิน” เพื่อดูชื่ออาหารและแคลอรีโดยประมาณ')
     } catch (e) { setError(e instanceof Error ? e.message : 'เปิดรูปไม่สำเร็จ') }
@@ -199,43 +203,47 @@ function MealComposer({ date, accessToken, onClose, onSave }: { date: string; ac
     setError('')
     try {
       await onSave({
-        eaten_at: new Date(`${date}T${time}:00`).toISOString(),
+        eaten_at: new Date(`${day}T${time}:00`).toISOString(),
         meal_type: mealType,
         name: name.trim(),
         calories: Math.max(0, Math.round(Number(calories))),
+        image_path: removeExistingPhoto ? null : meal?.image_path || null,
         image_url: preview || null,
-        note: analysisNote || null,
-      }, photo)
+        note: note || null,
+      }, photo, meal)
       onClose()
     } catch (e) { setError(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ') }
     finally { setBusy(false) }
   }
 
-  return <Modal title="เพิ่มมื้ออาหาร" subtitle="บันทึกภาพและรายละเอียดของมื้อนี้" onClose={onClose}>
+  return <Modal title={meal ? "แก้ไขมื้ออาหาร" : "เพิ่มมื้ออาหาร"} subtitle="บันทึกภาพและรายละเอียดของมื้อนี้" onClose={onClose}>
     <form onSubmit={submit} className="composer-form">
       <div className="photo-picker">
-        {preview ? <div className="photo-preview"><img src={preview} alt="ภาพอาหารที่เลือก" /><button type="button" className="photo-remove" onClick={() => { setPhoto(undefined); setPreview(''); setAnalysisNote('') }} aria-label="ลบรูป"><X size={16} /></button></div> : <button type="button" className="photo-drop" onClick={() => inputRef.current?.click()}><span className="photo-drop-icon"><ImagePlus size={23} /></span><strong>เพิ่มรูปอาหาร</strong><small>ถ่ายรูปหรือเลือกจากอัลบั้ม</small><span className="photo-drop-cta"><Camera size={14} /> เลือกรูป</span></button>}
+        {preview ? <div className="photo-preview"><img src={preview} alt="ภาพอาหารที่เลือก" /><button type="button" className="photo-remove" onClick={() => { setPhoto(undefined); setPreview(''); setAnalysisNote(''); setRemoveExistingPhoto(Boolean(meal?.image_path)) }} aria-label="ลบรูป"><X size={16} /></button></div> : <button type="button" className="photo-drop" onClick={() => inputRef.current?.click()}><span className="photo-drop-icon"><ImagePlus size={23} /></span><strong>เพิ่มรูปอาหาร</strong><small>ถ่ายรูปหรือเลือกจากอัลบั้ม</small><span className="photo-drop-cta"><Camera size={14} /> เลือกรูป</span></button>}
         <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void choosePhoto(e.target.files?.[0])} />
       </div>
       {preview && <div className="analysis-row"><div className="analysis-copy"><Sparkles size={16} /><span>{analysisNote || 'ให้ AI ช่วยดูว่าเป็นอาหารอะไร'}</span></div><button type="button" className="button button-outline button-small" onClick={() => void analyzePhoto()} disabled={analyzing}>{analyzing ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{analyzing ? 'กำลังดูรูป...' : 'ให้ช่วยประเมิน'}</button></div>}
       <div className="field-grid">
         <div className="field full-field"><label htmlFor="meal-name">ชื่ออาหาร</label><input id="meal-name" required maxLength={160} placeholder="เช่น ข้าวกะเพราไก่ไข่ดาว" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div className="field"><label htmlFor="meal-calories">แคลอรีโดยประมาณ</label><div className="input-suffix"><input id="meal-calories" required type="number" min="0" max="10000" step="1" placeholder="0" value={calories} onChange={(e) => setCalories(e.target.value)} /><span>kcal</span></div></div>
+        <div className="field"><label htmlFor="meal-date">วันที่ทาน</label><input id="meal-date" type="date" value={day} onChange={(e) => setDay(e.target.value)} /></div>
         <div className="field"><label htmlFor="meal-time">เวลาที่ทาน</label><input id="meal-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
         <div className="field full-field"><label>ประเภทมื้อ</label><div className="choice-row">{mealTypes.map((type) => <button type="button" key={type} className={`choice-chip ${mealType === type ? 'selected' : ''}`} onClick={() => setMealType(type)}>{mealLabels[type]}</button>)}</div></div>
       </div>
+      <div className="field"><label htmlFor="meal-note">บันทึกเพิ่มเติม</label><input id="meal-note" maxLength={500} placeholder="เช่น ส่วนผสมหรือหมายเหตุ" value={note} onChange={(e) => setNote(e.target.value)} /></div>
       {error && <p className="form-error">{error}</p>}
       <p className="estimate-disclaimer"><CircleHelp size={14} /> ค่าแคลอรีจากภาพเป็นเพียงการประเมิน อาจคลาดเคลื่อนตามปริมาณและส่วนผสม</p>
-      <div className="modal-actions"><button type="button" className="button button-ghost" onClick={onClose}>ยกเลิก</button><button className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} บันทึกมื้อนี้</button></div>
+      <div className="modal-actions"><button type="button" className="button button-ghost" onClick={onClose}>ยกเลิก</button><button className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} {meal ? "บันทึกการแก้ไข" : "บันทึกมื้อนี้"}</button></div>
     </form>
   </Modal>
 }
 
-function ActivityComposer({ date, onClose, onSave }: { date: string; onClose: () => void; onSave: (entry: Omit<Activity, 'id'>) => Promise<void> }) {
-  const [activity, setActivity] = useState('วิ่ง')
-  const [calories, setCalories] = useState('')
-  const [distance, setDistance] = useState('')
-  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
+function ActivityComposer({ date, item, onClose, onSave }: { date: string; item?: Activity; onClose: () => void; onSave: (entry: Omit<Activity, 'id'>, existing?: Activity) => Promise<void> }) {
+  const [activity, setActivity] = useState(item?.activity || 'วิ่ง')
+  const [calories, setCalories] = useState(item ? String(item.calories_burned) : '')
+  const [distance, setDistance] = useState(item ? String(item.distance_km) : '')
+  const [time, setTime] = useState(() => item ? new Date(item.performed_at).toTimeString().slice(0, 5) : new Date().toTimeString().slice(0, 5))
+  const [day, setDay] = useState(item ? dateKey(new Date(item.performed_at)) : date)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent) {
@@ -243,22 +251,22 @@ function ActivityComposer({ date, onClose, onSave }: { date: string; onClose: ()
     setBusy(true)
     setError('')
     try {
-      await onSave({ performed_at: new Date(`${date}T${time}:00`).toISOString(), activity, calories_burned: Math.max(0, Math.round(Number(calories) || 0)), distance_km: Math.max(0, Number(distance) || 0) })
+      await onSave({ performed_at: new Date(`${day}T${time}:00`).toISOString(), activity, calories_burned: Math.max(0, Math.round(Number(calories) || 0)), distance_km: Math.max(0, Number(distance) || 0) }, item)
       onClose()
     } catch (e) { setError(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ') }
     finally { setBusy(false) }
   }
-  return <Modal title="เพิ่มกิจกรรม" subtitle="เก็บการออกกำลังกายของวันนี้" onClose={onClose}>
+  return <Modal title={item ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรม"} subtitle="เก็บการออกกำลังกายของวันนี้" onClose={onClose}>
     <form onSubmit={submit} className="composer-form">
       <div className="activity-type-grid">{activityOptions.map((item) => <button key={item} type="button" className={`activity-option ${activity === item ? 'selected' : ''}`} onClick={() => setActivity(item)}><span className="activity-option-icon">{item === 'วิ่ง' ? <Footprints size={18} /> : <ActivityIcon size={18} />}</span>{item}</button>)}</div>
       <div className="field-grid">
         <div className="field"><label htmlFor="burned">เผาผลาญประมาณ</label><div className="input-suffix"><input id="burned" type="number" min="0" max="20000" required placeholder="0" value={calories} onChange={(e) => setCalories(e.target.value)} /><span>kcal</span></div></div>
         <div className="field"><label htmlFor="distance">ระยะทาง (ถ้ามี)</label><div className="input-suffix"><input id="distance" type="number" min="0" max="1000" step="0.01" placeholder="0.00" value={distance} onChange={(e) => setDistance(e.target.value)} /><span>กม.</span></div></div>
-        <div className="field full-field"><label htmlFor="activity-time">เวลา</label><input id="activity-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
+        <div className="field"><label htmlFor="activity-date">วันที่</label><input id="activity-date" type="date" value={day} onChange={(e) => setDay(e.target.value)} /></div><div className="field"><label htmlFor="activity-time">เวลา</label><input id="activity-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
       </div>
       {error && <p className="form-error">{error}</p>}
       <p className="estimate-disclaimer"><CircleHelp size={14} /> กรอกค่าพลังงานจากนาฬิกาหรือแอปออกกำลังกายของคุณ</p>
-      <div className="modal-actions"><button type="button" className="button button-ghost" onClick={onClose}>ยกเลิก</button><button className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} บันทึกกิจกรรม</button></div>
+      <div className="modal-actions"><button type="button" className="button button-ghost" onClick={onClose}>ยกเลิก</button><button className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} {item ? "บันทึกการแก้ไข" : "บันทึกกิจกรรม"}</button></div>
     </form>
   </Modal>
 }
@@ -280,7 +288,7 @@ export default function App() {
   const [meals, setMeals] = useState<Meal[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
-  const [modal, setModal] = useState<'meal' | 'activity' | null>(null)
+  const [modal, setModal] = useState<{ type: 'meal'; item?: Meal } | { type: 'activity'; item?: Activity } | null>(null)
   const [page, setPage] = useState<'dashboard' | 'reports' | 'settings'>('dashboard')
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number | undefined>(undefined)
@@ -363,36 +371,37 @@ export default function App() {
   }), [meals, activities])
   const net = totals.intake - totals.burned
 
-  async function saveMeal(entry: Omit<Meal, 'id'>, photo?: File) {
-    if (supabase && session?.user) {
-      let imagePath: string | null = null
-      if (photo) imagePath = await uploadFoodPhoto(session.user.id, photo)
-      const { error } = await supabase.from('food_entries').insert({
-        user_id: session.user.id,
-        eaten_at: entry.eaten_at,
-        meal_type: entry.meal_type,
-        name: entry.name,
-        calories: entry.calories,
-        image_path: imagePath,
-        note: entry.note,
-      })
-      if (error) throw error
-      await loadEntries()
-    } else {
-      throw new Error('กรุณาเข้าสู่ระบบก่อนบันทึก')
+  async function saveMeal(entry: Omit<Meal, 'id'>, photo?: File, existing?: Meal) {
+    if (!supabase || !session?.user) throw new Error('กรุณาเข้าสู่ระบบก่อนบันทึก')
+    let uploadedPath: string | null = null
+    let imagePath = existing?.image_path || null
+    if (photo) { uploadedPath = await uploadFoodPhoto(session.user.id, photo); imagePath = uploadedPath }
+    const values = { eaten_at: entry.eaten_at, meal_type: entry.meal_type, name: entry.name, calories: entry.calories, image_path: imagePath, note: entry.note }
+    const result = existing
+      ? await supabase.from('food_entries').update(values).eq('id', existing.id).eq('user_id', session.user.id)
+      : await supabase.from('food_entries').insert({ ...values, user_id: session.user.id })
+    if (result.error) {
+      if (uploadedPath) await supabase.storage.from('food-photos').remove([uploadedPath])
+      throw result.error
     }
-    showToast('บันทึกมื้ออาหารแล้ว')
+    if (existing?.image_path && existing.image_path !== imagePath) {
+      const { error } = await supabase.storage.from('food-photos').remove([existing.image_path])
+      if (error) showToast('บันทึกการแก้ไขแล้ว แต่ลบรูปเดิมไม่สำเร็จ')
+    }
+    dayCache.current.delete(`${session.user.id}:${selectedDate}`)
+    await loadEntries()
+    showToast(existing ? 'แก้ไขมื้ออาหารแล้ว' : 'บันทึกมื้ออาหารแล้ว')
   }
 
-  async function saveActivity(entry: Omit<Activity, 'id'>) {
-    if (supabase && session?.user) {
-      const { error } = await supabase.from('exercise_entries').insert({ ...entry, user_id: session.user.id })
-      if (error) throw error
-      await loadEntries()
-    } else {
-      throw new Error('กรุณาเข้าสู่ระบบก่อนบันทึก')
-    }
-    showToast('บันทึกกิจกรรมแล้ว')
+  async function saveActivity(entry: Omit<Activity, 'id'>, existing?: Activity) {
+    if (!supabase || !session?.user) throw new Error('กรุณาเข้าสู่ระบบก่อนบันทึก')
+    const result = existing
+      ? await supabase.from('exercise_entries').update({ ...entry }).eq('id', existing.id).eq('user_id', session.user.id)
+      : await supabase.from('exercise_entries').insert({ ...entry, user_id: session.user.id })
+    if (result.error) throw result.error
+    dayCache.current.delete(`${session.user.id}:${selectedDate}`)
+    await loadEntries()
+    showToast(existing ? 'แก้ไขกิจกรรมแล้ว' : 'บันทึกกิจกรรมแล้ว')
   }
 
   async function deleteMeal(meal: Meal) {
@@ -461,25 +470,25 @@ export default function App() {
           <div className="metric-stack"><article className="metric-card intake-metric"><div className="metric-top"><span className="metric-icon"><Utensils size={17} /></span><span className="metric-direction"><ArrowDownRight size={16} /></span></div><span className="metric-label">พลังงานที่รับเข้า</span><strong>{formatCalories(totals.intake)} <small>kcal</small></strong><span className="metric-foot">รวมจากอาหารที่บันทึก</span></article><article className="metric-card burn-metric"><div className="metric-top"><span className="metric-icon"><Flame size={17} /></span><span className="metric-direction"><ArrowUpRight size={16} /></span></div><span className="metric-label">เผาผลาญจากกิจกรรม</span><strong>{formatCalories(totals.burned)} <small>kcal</small></strong><span className="metric-foot"><Footprints size={13} /> {totals.distance.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม. ที่วิ่ง/เคลื่อนไหว</span></article></div>
         </section>
 
-        <div className="section-heading" id="meals"><div><span className="section-index">01 / FOOD JOURNAL</span><h2>มื้ออาหาร <span>{meals.length}</span></h2></div><button className="button button-primary" onClick={() => setModal('meal')}><Plus size={17} /> เพิ่มมื้ออาหาร</button></div>
+        <div className="section-heading" id="meals"><div><span className="section-index">01 / FOOD JOURNAL</span><h2>มื้ออาหาร <span>{meals.length}</span></h2></div><button className="button button-primary" onClick={() => setModal({ type: 'meal' })}><Plus size={17} /> เพิ่มมื้ออาหาร</button></div>
         <section className="journal-card" aria-label="รายการมื้ออาหาร">
           <div className="journal-card-head"><div><strong>บันทึกของวันนี้</strong><span>{isToday ? 'มื้อที่คุณบันทึกไว้ตลอดวัน' : formatDateLabel(selectedDate)}</span></div><span className="journal-total">รวม <b>{formatCalories(totals.intake)}</b> kcal</span></div>
-          {loading ? <div className="empty-state"><LoaderCircle className="spin" size={22} /><p>กำลังโหลดบันทึก…</p></div> : meals.length ? <div className="journal-list">{meals.map((meal) => <article className="meal-row" key={meal.id}><div className="meal-time"><span className="timeline-dot" /><time>{formatTime(meal.eaten_at)}</time></div><div className="meal-photo">{meal.image_url ? <img src={meal.image_url} alt={meal.name} /> : <div className={`meal-placeholder ${meal.meal_type}`}><Utensils size={19} /></div>}</div><div className="meal-description"><span className="meal-type-label">{mealLabels[meal.meal_type]}</span><strong>{meal.name}</strong>{meal.note && <small>{meal.note}</small>}</div><div className="meal-calories"><strong>{formatCalories(meal.calories)}</strong><small>kcal</small></div><button className="row-delete" title="ลบมื้อนี้" aria-label={`ลบ ${meal.name}`} onClick={() => void deleteMeal(meal)}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={<Utensils size={22} />} title="วันนี้ยังไม่มีมื้ออาหาร" description="บันทึกมื้อแรกของคุณ หรือเพิ่มรูปแล้วให้ช่วยประเมินแคลอรี" action="เพิ่มมื้ออาหาร" onClick={() => setModal('meal')} />}
-          <button className="add-row-button" onClick={() => setModal('meal')}><Plus size={15} /> เพิ่มบันทึกอาหาร</button>
+          {loading ? <div className="empty-state"><LoaderCircle className="spin" size={22} /><p>กำลังโหลดบันทึก…</p></div> : meals.length ? <div className="journal-list">{meals.map((meal) => <article className="meal-row" key={meal.id}><div className="meal-time"><span className="timeline-dot" /><time>{formatTime(meal.eaten_at)}</time></div><div className="meal-photo">{meal.image_url ? <img src={meal.image_url} alt={meal.name} /> : <div className={`meal-placeholder ${meal.meal_type}`}><Utensils size={19} /></div>}</div><div className="meal-description"><span className="meal-type-label">{mealLabels[meal.meal_type]}</span><strong>{meal.name}</strong>{meal.note && <small>{meal.note}</small>}</div><div className="meal-calories"><strong>{formatCalories(meal.calories)}</strong><small>kcal</small></div><button className="row-edit" title="แก้ไขมื้อนี้" aria-label={`แก้ไข ${meal.name}`} onClick={() => setModal({ type: 'meal', item: meal })}><Pencil size={15} /></button><button className="row-delete" title="ลบมื้อนี้" aria-label={`ลบ ${meal.name}`} onClick={() => void deleteMeal(meal)}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={<Utensils size={22} />} title="วันนี้ยังไม่มีมื้ออาหาร" description="บันทึกมื้อแรกของคุณ หรือเพิ่มรูปแล้วให้ช่วยประเมินแคลอรี" action="เพิ่มมื้ออาหาร" onClick={() => setModal({ type: 'meal' })} />}
+          <button className="add-row-button" onClick={() => setModal({ type: 'meal' })}><Plus size={15} /> เพิ่มบันทึกอาหาร</button>
         </section>
 
-        <div className="section-heading activity-heading" id="activities"><div><span className="section-index">02 / MOVEMENT</span><h2>กิจกรรมวันนี้ <span>{activities.length}</span></h2></div><button className="button button-outline" onClick={() => setModal('activity')}><Plus size={17} /> เพิ่มกิจกรรม</button></div>
+        <div className="section-heading activity-heading" id="activities"><div><span className="section-index">02 / MOVEMENT</span><h2>กิจกรรมวันนี้ <span>{activities.length}</span></h2></div><button className="button button-outline" onClick={() => setModal({ type: 'activity' })}><Plus size={17} /> เพิ่มกิจกรรม</button></div>
         <section className="activity-card" aria-label="รายการออกกำลังกาย">
-          {activities.length ? <div className="activity-list">{activities.map((item) => <article className="activity-row" key={item.id}><span className="activity-badge"><Footprints size={18} /></span><div className="activity-description"><strong>{item.activity}</strong><span>{formatTime(item.performed_at)} · {item.distance_km > 0 ? `${item.distance_km.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : 'ไม่ได้ระบุระยะทาง'}</span></div><div className="activity-calories"><strong>{formatCalories(item.calories_burned)}</strong><small>kcal</small></div><button className="row-delete" title="ลบกิจกรรมนี้" aria-label={`ลบ ${item.activity}`} onClick={() => void deleteActivity(item)}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={<Footprints size={22} />} title="ยังไม่มีบันทึกการเคลื่อนไหว" description="วิ่งหรือออกกำลังกายวันนี้? เพิ่มแคลอรีที่ใช้และระยะทางได้เลย" action="เพิ่มกิจกรรม" onClick={() => setModal('activity')} />}
-          {activities.length > 0 && <button className="add-row-button activity-add" onClick={() => setModal('activity')}><Plus size={15} /> เพิ่มกิจกรรม</button>}
+          {activities.length ? <div className="activity-list">{activities.map((item) => <article className="activity-row" key={item.id}><span className="activity-badge"><Footprints size={18} /></span><div className="activity-description"><strong>{item.activity}</strong><span>{formatTime(item.performed_at)} · {item.distance_km > 0 ? `${item.distance_km.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : 'ไม่ได้ระบุระยะทาง'}</span></div><div className="activity-calories"><strong>{formatCalories(item.calories_burned)}</strong><small>kcal</small></div><button className="row-edit" title="แก้ไขกิจกรรมนี้" aria-label={`แก้ไข ${item.activity}`} onClick={() => setModal({ type: 'activity', item })}><Pencil size={15} /></button><button className="row-delete" title="ลบกิจกรรมนี้" aria-label={`ลบ ${item.activity}`} onClick={() => void deleteActivity(item)}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={<Footprints size={22} />} title="ยังไม่มีบันทึกการเคลื่อนไหว" description="วิ่งหรือออกกำลังกายวันนี้? เพิ่มแคลอรีที่ใช้และระยะทางได้เลย" action="เพิ่มกิจกรรม" onClick={() => setModal({ type: 'activity' })} />}
+          {activities.length > 0 && <button className="add-row-button activity-add" onClick={() => setModal({ type: 'activity' })}><Plus size={15} /> เพิ่มกิจกรรม</button>}
         </section>
 
         <footer className="dashboard-foot"><span><CircleHelp size={14} /> พลังงานที่เผาผลาญในหน้านี้รวมเฉพาะกิจกรรมที่คุณบันทึก ไม่ใช่พลังงานพื้นฐานของร่างกาย</span><span>ทำอย่างสม่ำเสมอ ในแบบของคุณ</span></footer>
       </main>
       <nav className="mobile-nav"><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}><Salad size={19} /><span>ภาพรวม</span></button><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'reports' ? 'active' : ''}`} onClick={() => setPage('reports')}><ActivityIcon size={19} /><span>รายงาน</span></button><a href="#meals" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Utensils size={19} /><span>อาหาร</span></a><a href="#activities" className="mobile-nav-item" onClick={() => setPage('dashboard')}><Footprints size={19} /><span>กิจกรรม</span></a><button type="button" className={`mobile-nav-item mobile-nav-button ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}><SettingsIcon size={19} /><span>ตั้งค่า</span></button></nav>
     </div>
-    {modal === 'meal' && <MealComposer key={`meal-${selectedDate}`} date={selectedDate} accessToken={session.access_token} onClose={() => setModal(null)} onSave={saveMeal} />}
-    {modal === 'activity' && <ActivityComposer key={`activity-${selectedDate}`} date={selectedDate} onClose={() => setModal(null)} onSave={saveActivity} />}
+    {modal?.type === 'meal' && <MealComposer key={`meal-${selectedDate}-${modal.item?.id || 'new'}`} date={selectedDate} meal={modal.item} accessToken={session.access_token} onClose={() => setModal(null)} onSave={saveMeal} />}
+    {modal?.type === 'activity' && <ActivityComposer key={`activity-${selectedDate}-${modal.item?.id || 'new'}`} date={selectedDate} item={modal.item} onClose={() => setModal(null)} onSave={saveActivity} />}
     {toast && <div className="toast-message"><Check size={16} />{toast}</div>}
   </div>
 }

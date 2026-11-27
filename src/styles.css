@@ -115,3 +115,21 @@
 
 .report-chart-note{margin:-3px 0 8px;color:#929c98;font-size:9px}.report-chart-layout{display:grid;grid-template-columns:42px minmax(0,1fr);gap:7px;min-width:0}.report-chart-axis{height:150px;padding:8px 0 20px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#87938e;font-size:8px;font-variant-numeric:tabular-nums}.report-chart{height:150px;display:flex;align-items:stretch;gap:4px;border-bottom:1px solid #d9ded6;padding:8px 0 0;overflow-x:auto;overflow-y:hidden;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc((100% - 20px)/var(--chart-steps) - 1px),#e9ece5 calc((100% - 20px)/var(--chart-steps) - 1px),#e9ece5 calc((100% - 20px)/var(--chart-steps)));scrollbar-width:thin;scrollbar-color:#d9ded6 transparent}.report-chart-day{flex:1 0 32px;min-width:32px;display:flex;align-items:center;flex-direction:column;justify-content:flex-end;gap:5px}.report-bars{height:calc(100% - 17px);width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px}.report-bars span{display:block;max-width:14px;min-width:4px;width:35%;border-radius:4px 4px 1px 1px}.report-chart-day small{font-size:8px;color:#73817c;white-space:nowrap;font-variant-numeric:tabular-nums}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:760px){.report-chart-layout{grid-template-columns:38px minmax(0,1fr);gap:5px}.report-chart-axis{height:140px;font-size:7px}.report-chart{height:140px}.report-chart-day{flex:1 0 34px;min-width:34px}.report-chart-day small{font-size:8px}.report-chart-note{font-size:8px}}
+
+/* Record row actions: visible and comfortably tappable on touch devices. */
+.row-edit,.row-delete{width:34px;height:36px;border:0;display:grid;place-items:center;border-radius:8px;padding:0;transition:background .16s,color .16s,opacity .16s}
+.row-edit{background:transparent;color:#80918d;opacity:0}
+.meal-row:hover .row-edit,.activity-row:hover .row-edit,.row-edit:focus-visible{opacity:1}
+.row-edit:hover{color:#4c7768;background:#edf3ed}
+.meal-row{grid-template-columns:72px 54px minmax(0,1fr) 75px 34px 34px}
+.activity-row{grid-template-columns:40px minmax(0,1fr) 80px 34px 34px}
+@media(max-width:760px){
+  .meal-row{grid-template-columns:51px 43px minmax(0,1fr) 55px 32px 32px;gap:5px;padding-left:9px;padding-right:9px}
+  .activity-row{grid-template-columns:34px minmax(0,1fr) 65px 32px 32px;gap:5px}
+  .row-edit{opacity:1;width:32px;height:36px}
+}
+@media(max-width:390px){
+  .meal-row{grid-template-columns:42px 36px minmax(0,1fr) 46px 28px 28px;gap:3px;padding-left:6px;padding-right:6px}
+  .activity-row{grid-template-columns:30px minmax(0,1fr) 52px 28px 28px;gap:3px}
+  .row-edit,.row-delete{width:28px}
+}
